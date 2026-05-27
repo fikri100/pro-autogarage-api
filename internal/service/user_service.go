@@ -24,8 +24,21 @@ func (s *UserService) GetAllUsers(ctx context.Context) ([]*domain.User, error) {
 
 // CreateUser validates and creates a new user, hashing the password
 func (s *UserService) CreateUser(ctx context.Context, req domain.UserRequest, adminUser string) error {
-	if req.Username == "" || req.Password == "" || req.RoleID == 0 || req.EmployeeID == 0 {
-		return errors.New("username, password, roleId, and employeeId are required")
+	if req.Username == "" || req.Password == "" || req.RoleID == 0 {
+		return errors.New("username, password, and roleId are required")
+	}
+
+	// If EmployeeID is not provided, create a new employee first
+	if req.EmployeeID == 0 {
+		if req.EmployeeName == "" || req.Position == "" {
+			return errors.New("employeeName and position are required to create a new employee")
+		}
+		
+		newEmpID, err := s.repo.InsertEmployee(ctx, req.EmployeeName, req.Position, "-", adminUser)
+		if err != nil {
+			return err
+		}
+		req.EmployeeID = newEmpID
 	}
 
 	// Hash password
@@ -51,13 +64,6 @@ func (s *UserService) GetRoles(ctx context.Context) ([]*domain.Role, error) {
 	return s.repo.GetRoles(ctx)
 }
 
-// UpdateRolePermissions updates the JSON permissions matrix
-func (s *UserService) UpdateRolePermissions(ctx context.Context, id int, permissions string, adminUser string) error {
-	if permissions == "" {
-		permissions = "{}"
-	}
-	return s.repo.UpdateRolePermissions(ctx, id, permissions, adminUser)
-}
 
 // GetEmployees gets all active employees
 func (s *UserService) GetEmployees(ctx context.Context) ([]*domain.Employee, error) {

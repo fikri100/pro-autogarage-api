@@ -31,3 +31,27 @@ type ProductRequest struct {
 	StockQuantity *int     `json:"stockQuantity"`
 	MinStockLimit *int     `json:"minStockLimit"`
 }
+
+// RestockRequest represents the client payload for restocking a product
+type RestockRequest struct {
+	ProductID     int     `json:"productId"`
+	Quantity      int     `json:"quantity"`
+	PurchasePrice float64 `json:"purchasePrice"`
+	ReferenceID   string  `json:"referenceId"`
+	RecordExpense bool    `json:"recordExpense"`
+}
+
+// StockLog represents a single record in the stock_logs database table
+type StockLog struct {
+	ID          int       `json:"id"`
+	ProductID   int       `json:"productId"`
+	LogType     string    `json:"logType"` // 'IN' or 'OUT'
+	Quantity    int       `json:"quantity"`
+	ReferenceID string    `json:"referenceId"`
+	Status      string    `json:"status"`
+	CreatedBy   string    `json:"createdBy"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedBy   string    `json:"updatedBy"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+

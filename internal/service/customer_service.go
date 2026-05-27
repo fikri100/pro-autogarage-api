@@ -26,6 +26,7 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, req domain.Custome
 		Phone:         req.Phone,
 		Address:       req.Address,
 		Email:         req.Email,
+		Username:      req.Username,
 		IsSelfService: req.IsSelfService,
 		Password:      req.Password,
 		CreatedBy:     &adminUser,
@@ -61,6 +62,7 @@ func (s *CustomerService) UpdateCustomer(ctx context.Context, id int, req domain
 		Phone:         req.Phone,
 		Address:       req.Address,
 		Email:         req.Email,
+		Username:      req.Username,
 		IsSelfService: req.IsSelfService,
 		UpdatedBy:     &adminUser,
 	}

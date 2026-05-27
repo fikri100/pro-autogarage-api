@@ -16,10 +16,12 @@ type User struct {
 
 // UserRequest payload for creating/updating a user
 type UserRequest struct {
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	RoleID     int    `json:"roleId"`
-	EmployeeID int    `json:"employeeId"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	RoleID       int    `json:"roleId"`
+	EmployeeID   int    `json:"employeeId"`
+	EmployeeName string `json:"employeeName,omitempty"`
+	Position     string `json:"position,omitempty"`
 }
 
 // Role represents a system role
@@ -29,10 +31,6 @@ type Role struct {
 	Permissions string `json:"permissions"` // Stored as JSONB string in DB
 }
 
-// RolePermissionRequest payload for updating role permissions
-type RolePermissionRequest struct {
-	Permissions string `json:"permissions"` // JSON stringified matrix
-}
 
 // Employee represents a staff member
 type Employee struct {

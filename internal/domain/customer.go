@@ -9,6 +9,7 @@ type Customer struct {
 	Phone         string    `json:"phone"`
 	Address       *string   `json:"address"` // nullable
 	Email         *string   `json:"email"`   // nullable
+	Username      *string   `json:"username"` // nullable/unique
 	IsSelfService bool      `json:"isSelfService"`
 	Password      *string   `json:"-"` // never expose password in JSON
 	Status        string    `json:"status"`
@@ -24,6 +25,7 @@ type CustomerRequest struct {
 	Phone         string  `json:"phone"`
 	Address       *string `json:"address"`
 	Email         *string `json:"email"`
+	Username      *string `json:"username"`
 	IsSelfService bool    `json:"isSelfService"`
 	Password      *string `json:"password"`
 }

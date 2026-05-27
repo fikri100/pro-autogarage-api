@@ -37,10 +37,12 @@ func (r *BookingRepository) FindAll(ctx context.Context, statusFilter string) ([
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
 			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
-			b.created_by, b.created_at, b.updated_by, b.updated_at
+			b.created_by, b.created_at, b.updated_by, b.updated_at,
+			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
+		JOIN customers vc ON v.customer_id = vc.id
 		WHERE b.status = 'Y'
 	`
 	var args []interface{}
@@ -66,6 +68,7 @@ func (r *BookingRepository) FindAll(ctx context.Context, statusFilter string) ([
 			&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
 			&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
 			&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
+			&b.VehicleCustomerID, &b.VehicleOwnerName,
 		); err != nil {
 			return nil, err
 		}
@@ -84,10 +87,12 @@ func (r *BookingRepository) FindByID(ctx context.Context, id int) (*domain.Booki
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
 			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
-			b.created_by, b.created_at, b.updated_by, b.updated_at
+			b.created_by, b.created_at, b.updated_by, b.updated_at,
+			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
+		JOIN customers vc ON v.customer_id = vc.id
 		WHERE b.id = $1 AND b.status = 'Y'
 	`
 	var b domain.Booking
@@ -98,6 +103,7 @@ func (r *BookingRepository) FindByID(ctx context.Context, id int) (*domain.Booki
 		&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
 		&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
 		&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
+		&b.VehicleCustomerID, &b.VehicleOwnerName,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

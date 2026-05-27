@@ -20,6 +20,8 @@ type Booking struct {
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedBy         *string   `json:"updatedBy"`
 	UpdatedAt         time.Time `json:"updatedAt"`
+	VehicleCustomerID int       `json:"vehicleCustomerId"`
+	VehicleOwnerName  string    `json:"vehicleOwnerName"`
 }
 
 type BookingRequest struct {

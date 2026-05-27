@@ -135,3 +135,29 @@ func (s *ProductService) UpdateProduct(ctx context.Context, id int, req domain.P
 func (s *ProductService) DeleteProduct(ctx context.Context, id int, adminUser string) error {
 	return s.repo.SoftDelete(ctx, id, adminUser)
 }
+
+// RestockProduct validates and runs restocking transaction
+func (s *ProductService) RestockProduct(ctx context.Context, req domain.RestockRequest, creator string) error {
+	if req.ProductID <= 0 {
+		return errors.New("ID produk tidak valid")
+	}
+	if req.Quantity <= 0 {
+		return errors.New("kuantitas restock harus lebih besar dari 0")
+	}
+	if req.PurchasePrice <= 0 {
+		return errors.New("harga beli restock harus lebih besar dari 0")
+	}
+	if req.ReferenceID == "" {
+		return errors.New("nomor referensi (PO number) wajib diisi")
+	}
+	return s.repo.RestockProductTx(ctx, req, creator)
+}
+
+// GetStockLogs retrieves stock logs list for a product
+func (s *ProductService) GetStockLogs(ctx context.Context, prodID int) ([]*domain.StockLog, error) {
+	if prodID <= 0 {
+		return nil, errors.New("ID produk tidak valid")
+	}
+	return s.repo.FindStockLogsByProductID(ctx, prodID)
+}
+

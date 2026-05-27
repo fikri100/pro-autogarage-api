@@ -52,6 +52,18 @@ func (r *UserRepository) InsertUser(ctx context.Context, u *domain.UserRequest, 
 	return err
 }
 
+// InsertEmployee creates a new employee and returns the generated ID
+func (r *UserRepository) InsertEmployee(ctx context.Context, name, position, phone, createdBy string) (int, error) {
+	query := `
+		INSERT INTO employees (name, position, phone, status, created_by, updated_by)
+		VALUES ($1, $2, $3, 'Y', $4, $5)
+		RETURNING id
+	`
+	var id int
+	err := r.db.QueryRowContext(ctx, query, name, position, phone, createdBy, createdBy).Scan(&id)
+	return id, err
+}
+
 // UpdateUser updates user details (except password)
 func (r *UserRepository) UpdateUser(ctx context.Context, id int, u *domain.UserRequest, updatedBy string) error {
 	query := `
@@ -94,16 +106,6 @@ func (r *UserRepository) GetRoles(ctx context.Context) ([]*domain.Role, error) {
 	return roles, nil
 }
 
-// UpdateRolePermissions updates the JSONB permissions for a role
-func (r *UserRepository) UpdateRolePermissions(ctx context.Context, id int, permissionsJSON string, updatedBy string) error {
-	query := `
-		UPDATE roles 
-		SET permissions = $1::jsonb, updated_by = $2, updated_at = CURRENT_TIMESTAMP 
-		WHERE id = $3
-	`
-	_, err := r.db.ExecContext(ctx, query, permissionsJSON, updatedBy, id)
-	return err
-}
 
 // GetEmployees gets all active employees
 func (r *UserRepository) GetEmployees(ctx context.Context) ([]*domain.Employee, error) {

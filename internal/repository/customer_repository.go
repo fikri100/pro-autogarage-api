@@ -18,12 +18,12 @@ func NewCustomerRepository(db *sql.DB) *CustomerRepository {
 // Insert creates a new customer record
 func (r *CustomerRepository) Insert(ctx context.Context, c *domain.Customer) error {
 	query := `
-		INSERT INTO customers (name, phone, address, email, is_self_service, password, created_by, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO customers (name, phone, address, email, username, is_self_service, password, created_by, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, status, created_at, updated_at
 	`
 	err := r.db.QueryRowContext(ctx, query,
-		c.Name, c.Phone, c.Address, c.Email, c.IsSelfService, c.Password, c.CreatedBy, c.UpdatedBy,
+		c.Name, c.Phone, c.Address, c.Email, c.Username, c.IsSelfService, c.Password, c.CreatedBy, c.UpdatedBy,
 	).Scan(&c.ID, &c.Status, &c.CreatedAt, &c.UpdatedAt)
 
 	return err
@@ -32,7 +32,7 @@ func (r *CustomerRepository) Insert(ctx context.Context, c *domain.Customer) err
 // FindAll retrieves all active customers
 func (r *CustomerRepository) FindAll(ctx context.Context) ([]*domain.Customer, error) {
 	query := `
-		SELECT id, name, phone, address, email, is_self_service, status, created_by, created_at, updated_by, updated_at
+		SELECT id, name, phone, address, email, username, is_self_service, status, created_by, created_at, updated_by, updated_at
 		FROM customers
 		WHERE status = 'Y'
 		ORDER BY id DESC
@@ -47,7 +47,7 @@ func (r *CustomerRepository) FindAll(ctx context.Context) ([]*domain.Customer, e
 	for rows.Next() {
 		var c domain.Customer
 		if err := rows.Scan(
-			&c.ID, &c.Name, &c.Phone, &c.Address, &c.Email, &c.IsSelfService,
+			&c.ID, &c.Name, &c.Phone, &c.Address, &c.Email, &c.Username, &c.IsSelfService,
 			&c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedBy, &c.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -60,13 +60,13 @@ func (r *CustomerRepository) FindAll(ctx context.Context) ([]*domain.Customer, e
 // FindByID retrieves a specific customer by ID
 func (r *CustomerRepository) FindByID(ctx context.Context, id int) (*domain.Customer, error) {
 	query := `
-		SELECT id, name, phone, address, email, is_self_service, status, created_by, created_at, updated_by, updated_at
+		SELECT id, name, phone, address, email, username, is_self_service, status, created_by, created_at, updated_by, updated_at
 		FROM customers
 		WHERE id = $1 AND status = 'Y'
 	`
 	var c domain.Customer
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&c.ID, &c.Name, &c.Phone, &c.Address, &c.Email, &c.IsSelfService,
+		&c.ID, &c.Name, &c.Phone, &c.Address, &c.Email, &c.Username, &c.IsSelfService,
 		&c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedBy, &c.UpdatedAt,
 	)
 	if err != nil {
@@ -82,11 +82,11 @@ func (r *CustomerRepository) FindByID(ctx context.Context, id int) (*domain.Cust
 func (r *CustomerRepository) Update(ctx context.Context, c *domain.Customer) error {
 	query := `
 		UPDATE customers
-		SET name = $1, phone = $2, address = $3, email = $4, is_self_service = $5, updated_by = $6, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $7 AND status = 'Y'
+		SET name = $1, phone = $2, address = $3, email = $4, username = $5, is_self_service = $6, updated_by = $7, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $8 AND status = 'Y'
 	`
 	res, err := r.db.ExecContext(ctx, query,
-		c.Name, c.Phone, c.Address, c.Email, c.IsSelfService, c.UpdatedBy, c.ID,
+		c.Name, c.Phone, c.Address, c.Email, c.Username, c.IsSelfService, c.UpdatedBy, c.ID,
 	)
 	if err != nil {
 		return err

@@ -160,3 +160,121 @@ func (r *ProductRepository) SoftDelete(ctx context.Context, id int, updatedBy st
 	}
 	return nil
 }
+
+// RestockProductTx processes product restocking in an atomic database transaction
+func (r *ProductRepository) RestockProductTx(ctx context.Context, req domain.RestockRequest, creator string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Fetch current product details and lock row for update
+	var itemType string
+	var currentStock int
+	var currentHPP float64
+	var prodName string
+
+	query := `
+		SELECT item_type, stock_quantity, purchase_price, name 
+		FROM products 
+		WHERE id = $1 AND status = 'Y' 
+		FOR UPDATE
+	`
+	err = tx.QueryRowContext(ctx, query, req.ProductID).Scan(&itemType, &currentStock, &currentHPP, &prodName)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("produk tidak ditemukan")
+		}
+		return err
+	}
+
+	if itemType != "SPR" {
+		return errors.New("hanya produk bertipe SPAREPART (SPR) yang dapat di-restock")
+	}
+
+	// 2. Calculate new Moving Average HPP
+	var newHPP float64
+	newStock := currentStock + req.Quantity
+
+	if newStock > 0 {
+		// MA Formula: ((Q_curr * HPP_curr) + (Q_new * Price_new)) / (Q_curr + Q_new)
+		totalCost := (float64(currentStock) * currentHPP) + (float64(req.Quantity) * req.PurchasePrice)
+		newHPP = totalCost / float64(newStock)
+	} else {
+		newHPP = req.PurchasePrice
+	}
+
+	// 3. Update products table
+	updateQuery := `
+		UPDATE products
+		SET stock_quantity = $1, purchase_price = $2, updated_by = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $4
+	`
+	_, err = tx.ExecContext(ctx, updateQuery, newStock, newHPP, creator, req.ProductID)
+	if err != nil {
+		return err
+	}
+
+	// 4. Insert Stock Log ('IN')
+	logQuery := `
+		INSERT INTO stock_logs (product_id, log_type, quantity, reference_id, created_by, updated_by)
+		VALUES ($1, 'IN', $2, $3, $4, $5)
+	`
+	_, err = tx.ExecContext(ctx, logQuery, req.ProductID, req.Quantity, req.ReferenceID, creator, creator)
+	if err != nil {
+		return err
+	}
+
+	// 5. Optionally record expense in cashflows
+	if req.RecordExpense {
+		totalExpense := float64(req.Quantity) * req.PurchasePrice
+		desc := fmt.Sprintf("Pembelian Restock: %s (%d pcs @ Rp %.0f) - Ref: %s", prodName, req.Quantity, req.PurchasePrice, req.ReferenceID)
+		
+		cashflowQuery := `
+			INSERT INTO cashflows (cashflow_type, amount, category, description, created_by, updated_by)
+			VALUES ('EXP', $1, 'STOCK', $2, $3, $4)
+		`
+		_, err = tx.ExecContext(ctx, cashflowQuery, totalExpense, desc, creator, creator)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// FindStockLogsByProductID retrieves the list of stock logs for a product
+func (r *ProductRepository) FindStockLogsByProductID(ctx context.Context, prodID int) ([]*domain.StockLog, error) {
+	query := `
+		SELECT id, product_id, log_type, quantity, COALESCE(reference_id, ''), status, COALESCE(created_by, ''), created_at, COALESCE(updated_by, ''), updated_at
+		FROM stock_logs
+		WHERE product_id = $1 AND status = 'Y'
+		ORDER BY id DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, prodID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*domain.StockLog
+	for rows.Next() {
+		var l domain.StockLog
+		err := rows.Scan(
+			&l.ID, &l.ProductID, &l.LogType, &l.Quantity, &l.ReferenceID,
+			&l.Status, &l.CreatedBy, &l.CreatedAt, &l.UpdatedBy, &l.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, &l)
+	}
+
+	if logs == nil {
+		logs = []*domain.StockLog{}
+	}
+
+	return logs, nil
+}
+
