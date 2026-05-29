@@ -35,6 +35,7 @@ func (r *WorkOrderRepository) FindAllActive(ctx context.Context) ([]*domain.Work
 		SELECT 
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
 			c.id, c.name, wo.mechanic_id, e.name, wo.start_time, wo.end_time,
+			wo.estimated_minutes, wo.estimated_completion,
 			wo.work_status, wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
 		FROM work_orders wo
 		JOIN vehicles v ON wo.vehicle_id = v.id
@@ -53,9 +54,12 @@ func (r *WorkOrderRepository) FindAllActive(ctx context.Context) ([]*domain.Work
 	for rows.Next() {
 		var wo domain.WorkOrder
 		var mechName sql.NullString
+		var estimatedMinutes sql.NullInt64
+		var estimatedCompletion sql.NullTime
 		if err := rows.Scan(
 			&wo.ID, &wo.BookingID, &wo.VehicleID, &wo.LicensePlate, &wo.VehicleBrand, &wo.VehicleModel,
 			&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
+			&estimatedMinutes, &estimatedCompletion,
 			&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -63,6 +67,13 @@ func (r *WorkOrderRepository) FindAllActive(ctx context.Context) ([]*domain.Work
 
 		if mechName.Valid {
 			wo.MechanicName = &mechName.String
+		}
+		if estimatedMinutes.Valid {
+			v := int(estimatedMinutes.Int64)
+			wo.EstimatedMinutes = &v
+		}
+		if estimatedCompletion.Valid {
+			wo.EstimatedCompletion = &estimatedCompletion.Time
 		}
 		wos = append(wos, &wo)
 	}
@@ -75,6 +86,7 @@ func (r *WorkOrderRepository) FindByID(ctx context.Context, id int) (*domain.Wor
 		SELECT 
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
 			c.id, c.name, wo.mechanic_id, e.name, wo.start_time, wo.end_time,
+			wo.estimated_minutes, wo.estimated_completion,
 			wo.work_status, wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
 		FROM work_orders wo
 		JOIN vehicles v ON wo.vehicle_id = v.id
@@ -84,9 +96,12 @@ func (r *WorkOrderRepository) FindByID(ctx context.Context, id int) (*domain.Wor
 	`
 	var wo domain.WorkOrder
 	var mechName sql.NullString
+	var estimatedMinutes sql.NullInt64
+	var estimatedCompletion sql.NullTime
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&wo.ID, &wo.BookingID, &wo.VehicleID, &wo.LicensePlate, &wo.VehicleBrand, &wo.VehicleModel,
 		&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
+		&estimatedMinutes, &estimatedCompletion,
 		&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
 	)
 	if err != nil {
@@ -98,6 +113,13 @@ func (r *WorkOrderRepository) FindByID(ctx context.Context, id int) (*domain.Wor
 
 	if mechName.Valid {
 		wo.MechanicName = &mechName.String
+	}
+	if estimatedMinutes.Valid {
+		v := int(estimatedMinutes.Int64)
+		wo.EstimatedMinutes = &v
+	}
+	if estimatedCompletion.Valid {
+		wo.EstimatedCompletion = &estimatedCompletion.Time
 	}
 	return &wo, nil
 }
@@ -132,6 +154,32 @@ func (r *WorkOrderRepository) AssignMechanic(ctx context.Context, id int, mechan
 		WHERE id = $5 AND status = 'Y'
 	`
 	res, err := r.db.ExecContext(ctx, query, mechanicID, notes, status, updatedBy, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("work order not found")
+	}
+	return nil
+}
+
+// UpdateEstimation sets estimated_minutes and auto-calculates estimated_completion from start_time
+func (r *WorkOrderRepository) UpdateEstimation(ctx context.Context, id int, estimatedMinutes int, updatedBy string) error {
+	query := `
+		UPDATE work_orders
+		SET 
+			estimated_minutes    = $1,
+			estimated_completion = start_time + ($1::integer * INTERVAL '1 minute'),
+			updated_by           = $2,
+			updated_at           = CURRENT_TIMESTAMP
+		WHERE id = $3 AND status = 'Y'
+	`
+	res, err := r.db.ExecContext(ctx, query, estimatedMinutes, updatedBy, id)
 	if err != nil {
 		return err
 	}

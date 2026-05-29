@@ -251,11 +251,13 @@ func (s *PortalService) GetBookings(ctx context.Context, customerID int) ([]*dom
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
 			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
 			b.created_by, b.created_at, b.updated_by, b.updated_at,
-			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name
+			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name,
+			wo.estimated_completion
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
 		JOIN customers vc ON v.customer_id = vc.id
+		LEFT JOIN work_orders wo ON wo.booking_id = b.id AND wo.status = 'Y'
 		WHERE b.customer_id = $1 AND b.status = 'Y'
 		ORDER BY b.booking_date DESC, b.booking_time DESC
 	`
@@ -270,18 +272,63 @@ func (s *PortalService) GetBookings(ctx context.Context, customerID int) ([]*dom
 		var b domain.Booking
 		var bDate time.Time
 		var bTime string
+		var estimatedCompletion sql.NullTime
 
 		if err := rows.Scan(
 			&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
 			&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
 			&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
 			&b.VehicleCustomerID, &b.VehicleOwnerName,
+			&estimatedCompletion,
 		); err != nil {
 			return nil, err
 		}
 
 		b.BookingDate = bDate.Format("2006-01-02")
 		b.BookingTime = bTime[:5]
+		if estimatedCompletion.Valid {
+			b.EstimatedCompletion = &estimatedCompletion.Time
+		}
+
+		// Load estimation details and total amount
+		itemsQuery := `
+			SELECT 
+				td.id, td.transaction_id, td.product_id, p.code, p.name, p.item_type, p.category,
+				td.quantity, td.price_at_transaction, td.subtotal, t.total_amount
+			FROM transaction_details td
+			JOIN transactions t ON td.transaction_id = t.id
+			JOIN work_orders wo ON t.work_order_id = wo.id
+			JOIN products p ON td.product_id = p.id
+			WHERE wo.booking_id = $1 AND td.status = 'Y' AND t.status = 'Y' AND wo.status = 'Y'
+		`
+		rowsItems, errItems := s.db.QueryContext(ctx, itemsQuery, b.ID)
+		if errItems == nil {
+			var items []*domain.TransactionDetail
+			var totalAmt float64
+			hasItems := false
+
+			for rowsItems.Next() {
+				var d domain.TransactionDetail
+				if err := rowsItems.Scan(
+					&d.ID, &d.TransactionID, &d.ProductID, &d.ProductCode, &d.ProductName, &d.ProductType, &d.ProductCategory,
+					&d.Quantity, &d.PriceAtTransaction, &d.Subtotal, &totalAmt,
+				); err == nil {
+					items = append(items, &d)
+					hasItems = true
+				}
+			}
+			rowsItems.Close()
+
+			if hasItems {
+				b.EstimationItems = items
+				b.TotalAmount = &totalAmt
+			} else {
+				b.EstimationItems = []*domain.TransactionDetail{}
+			}
+		} else {
+			b.EstimationItems = []*domain.TransactionDetail{}
+		}
+
 		bookings = append(bookings, &b)
 	}
 

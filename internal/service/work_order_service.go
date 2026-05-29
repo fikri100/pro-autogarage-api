@@ -94,3 +94,17 @@ func (s *WorkOrderService) CompleteWorkOrder(ctx context.Context, id int, update
 
 	return s.woRepo.UpdateStatus(ctx, id, "COMPLETED", updatedBy)
 }
+
+// UpdateEstimation saves estimated duration and auto-calculates estimated_completion from start_time
+func (s *WorkOrderService) UpdateEstimation(ctx context.Context, id int, req domain.UpdateEstimationRequest, updatedBy string) error {
+	if req.EstimatedMinutes <= 0 {
+		return errors.New("estimatedMinutes harus lebih dari 0")
+	}
+
+	_, err := s.woRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	return s.woRepo.UpdateEstimation(ctx, id, req.EstimatedMinutes, updatedBy)
+}

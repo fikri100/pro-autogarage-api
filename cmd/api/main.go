@@ -170,6 +170,16 @@ func main() {
 		log.Fatalf("Failed to create role_menus table: %v", err)
 	}
 
+	// Migrate: add estimated_minutes & estimated_completion to work_orders (idempotent)
+	_, err = db.Exec(`
+		ALTER TABLE work_orders
+			ADD COLUMN IF NOT EXISTS estimated_minutes    INT DEFAULT NULL,
+			ADD COLUMN IF NOT EXISTS estimated_completion TIMESTAMPTZ DEFAULT NULL
+	`)
+	if err != nil {
+		log.Fatalf("Failed to migrate work_orders table (estimated fields): %v", err)
+	}
+
 	// Auto seed menus if empty
 	var menuCount int
 	err = db.QueryRow("SELECT COUNT(*) FROM menus").Scan(&menuCount)
@@ -257,7 +267,8 @@ func main() {
 	dashboardService := service.NewDashboardService(dashboardRepo)
 
 	// Initialize Portal & Security Middleware
-	portalRateLimiter := middleware.NewIPRateLimiter(10, time.Minute)
+	portalAuthRateLimiter := middleware.NewIPRateLimiter(15, time.Minute)
+	portalGeneralRateLimiter := middleware.NewIPRateLimiter(100, time.Minute)
 	waService := service.NewMockWhatsAppService()
 	portalService := service.NewPortalService(db, waService, bookingRepo)
 
@@ -441,20 +452,20 @@ func main() {
 	mux.HandleFunc("PUT /api/bookings/{id}/cancel", bookingHandler.CancelBooking)
 
 	// Portal Customer Self-Service Routes (secured with IP-based rate limiting)
-	mux.Handle("POST /api/portal/send-otp", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.SendOTP)))
-	mux.Handle("POST /api/portal/verify-otp", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.VerifyOTP)))
-	mux.Handle("POST /api/portal/register", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.Register)))
-	mux.Handle("POST /api/portal/login", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.Login)))
-	mux.Handle("POST /api/portal/bookings", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.CreateBooking)))
-	mux.Handle("GET /api/portal/bookings", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.GetBookings)))
-	mux.Handle("GET /api/portal/dashboard/summary", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.GetDashboardSummary)))
-	mux.Handle("GET /api/portal/vehicles", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.GetVehicles)))
-	mux.Handle("POST /api/portal/vehicles", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.AddVehicle)))
-	mux.Handle("PUT /api/portal/vehicles/{id}", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.UpdateVehicle)))
-	mux.Handle("DELETE /api/portal/vehicles/{id}", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.DeleteVehicle)))
-	mux.Handle("GET /api/portal/profile", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.GetProfile)))
-	mux.Handle("PUT /api/portal/profile", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.UpdateProfile)))
-	mux.Handle("PUT /api/portal/bookings/{id}/cancel", portalRateLimiter.Limit(http.HandlerFunc(portalHandler.CancelBooking)))
+	mux.Handle("POST /api/portal/send-otp", portalAuthRateLimiter.Limit(http.HandlerFunc(portalHandler.SendOTP)))
+	mux.Handle("POST /api/portal/verify-otp", portalAuthRateLimiter.Limit(http.HandlerFunc(portalHandler.VerifyOTP)))
+	mux.Handle("POST /api/portal/register", portalAuthRateLimiter.Limit(http.HandlerFunc(portalHandler.Register)))
+	mux.Handle("POST /api/portal/login", portalAuthRateLimiter.Limit(http.HandlerFunc(portalHandler.Login)))
+	mux.Handle("POST /api/portal/bookings", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.CreateBooking)))
+	mux.Handle("GET /api/portal/bookings", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.GetBookings)))
+	mux.Handle("GET /api/portal/dashboard/summary", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.GetDashboardSummary)))
+	mux.Handle("GET /api/portal/vehicles", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.GetVehicles)))
+	mux.Handle("POST /api/portal/vehicles", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.AddVehicle)))
+	mux.Handle("PUT /api/portal/vehicles/{id}", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.UpdateVehicle)))
+	mux.Handle("DELETE /api/portal/vehicles/{id}", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.DeleteVehicle)))
+	mux.Handle("GET /api/portal/profile", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.GetProfile)))
+	mux.Handle("PUT /api/portal/profile", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.UpdateProfile)))
+	mux.Handle("PUT /api/portal/bookings/{id}/cancel", portalGeneralRateLimiter.Limit(http.HandlerFunc(portalHandler.CancelBooking)))
 
 	// Work Order Routes
 	mux.HandleFunc("POST /api/work-orders", workOrderHandler.CreateWorkOrder)
@@ -462,6 +473,7 @@ func main() {
 	mux.HandleFunc("GET /api/work-orders/{id}", workOrderHandler.GetWorkOrderByID)
 	mux.HandleFunc("PUT /api/work-orders/{id}/assign", workOrderHandler.AssignMechanic)
 	mux.HandleFunc("PUT /api/work-orders/{id}/estimate", workOrderHandler.SaveEstimation)
+	mux.HandleFunc("PUT /api/work-orders/{id}/estimation", workOrderHandler.UpdateEstimation)
 	mux.HandleFunc("PUT /api/work-orders/{id}/complete", workOrderHandler.CompleteWorkOrder)
 
 	// Transaction & Cashier Routes
