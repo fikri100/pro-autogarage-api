@@ -278,3 +278,56 @@ func (r *ProductRepository) FindStockLogsByProductID(ctx context.Context, prodID
 	return logs, nil
 }
 
+// FindAllCategories retrieves all active categories
+func (r *ProductRepository) FindAllCategories(ctx context.Context) ([]domain.Category, error) {
+	query := "SELECT id, name FROM categories WHERE status = 'Y' ORDER BY id ASC"
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := []domain.Category{}
+	for rows.Next() {
+		var c domain.Category
+		if err := rows.Scan(&c.ID, &c.Name); err != nil {
+			return nil, err
+		}
+		list = append(list, c)
+	}
+	return list, nil
+}
+
+// InsertCategory inserts a new category record
+func (r *ProductRepository) InsertCategory(ctx context.Context, name string) (int, error) {
+	query := `
+		INSERT INTO categories (name, created_by, updated_by)
+		VALUES ($1, 'admin', 'admin')
+		RETURNING id
+	`
+	var id int
+	err := r.db.QueryRowContext(ctx, query, name).Scan(&id)
+	return id, err
+}
+
+// UpdateCategory updates an existing category name
+func (r *ProductRepository) UpdateCategory(ctx context.Context, id int, name string) error {
+	query := `
+		UPDATE categories 
+		SET name = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND status = 'Y'
+	`
+	_, err := r.db.ExecContext(ctx, query, name, id)
+	return err
+}
+
+// DeleteCategory soft deletes a category by setting status to 'N'
+func (r *ProductRepository) DeleteCategory(ctx context.Context, id int) error {
+	query := `
+		UPDATE categories 
+		SET status = 'N', updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
+}

@@ -109,7 +109,7 @@ func (r *UserRepository) GetRoles(ctx context.Context) ([]*domain.Role, error) {
 
 // GetEmployees gets all active employees
 func (r *UserRepository) GetEmployees(ctx context.Context) ([]*domain.Employee, error) {
-	query := `SELECT id, name, position FROM employees WHERE status = 'Y' ORDER BY name ASC`
+	query := `SELECT id, name, phone, COALESCE(address, ''), position FROM employees WHERE status = 'Y' ORDER BY name ASC`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -119,10 +119,242 @@ func (r *UserRepository) GetEmployees(ctx context.Context) ([]*domain.Employee, 
 	var emps []*domain.Employee
 	for rows.Next() {
 		var e domain.Employee
-		if err := rows.Scan(&e.ID, &e.Name, &e.Position); err != nil {
+		if err := rows.Scan(&e.ID, &e.Name, &e.Phone, &e.Address, &e.Position); err != nil {
 			return nil, err
 		}
 		emps = append(emps, &e)
 	}
 	return emps, nil
 }
+
+// CreateEmployee creates a new employee and returns the generated ID
+func (r *UserRepository) CreateEmployee(ctx context.Context, e *domain.EmployeeRequest, createdBy string) (int, error) {
+	query := `
+		INSERT INTO employees (name, phone, address, position, status, created_by, updated_by)
+		VALUES ($1, $2, $3, $4, 'Y', $5, $5)
+		RETURNING id
+	`
+	var id int
+	err := r.db.QueryRowContext(ctx, query, e.Name, e.Phone, e.Address, e.Position, createdBy).Scan(&id)
+	return id, err
+}
+
+// UpdateEmployee updates an existing employee's details
+func (r *UserRepository) UpdateEmployee(ctx context.Context, id int, e *domain.EmployeeRequest, updatedBy string) error {
+	query := `
+		UPDATE employees 
+		SET name = $1, phone = $2, address = $3, position = $4, updated_by = $5, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $6 AND status = 'Y'
+	`
+	_, err := r.db.ExecContext(ctx, query, e.Name, e.Phone, e.Address, e.Position, updatedBy, id)
+	return err
+}
+
+// DeleteEmployee soft deletes an employee by setting status to 'N'
+func (r *UserRepository) DeleteEmployee(ctx context.Context, id int, updatedBy string) error {
+	query := `
+		UPDATE employees 
+		SET status = 'N', updated_by = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND status = 'Y'
+	`
+	_, err := r.db.ExecContext(ctx, query, updatedBy, id)
+	return err
+}
+
+
+// FindUserByUsername retrieves a user record by username
+func (r *UserRepository) FindUserByUsername(ctx context.Context, username string) (*domain.UserResponse, error) {
+	query := `
+		SELECT u.id, u.username, u.password, u.role_id, r.role_name, u.employee_id, e.name as employee_name, u.status
+		FROM users u
+		JOIN roles r ON u.role_id = r.id
+		JOIN employees e ON u.employee_id = e.id
+		WHERE LOWER(u.username) = LOWER($1) AND u.status = 'Y'
+	`
+	var u domain.UserResponse
+	err := r.db.QueryRowContext(ctx, query, username).Scan(
+		&u.ID, &u.Username, &u.PasswordHash, &u.RoleID, &u.RoleName, &u.EmployeeID, &u.EmployeeName, &u.Status,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// FindMenusForRole retrieves tree structures of menus mapped to a role
+func (r *UserRepository) FindMenusForRole(ctx context.Context, roleID int) ([]domain.MenuItem, error) {
+	query := `
+		SELECT m.id, m.label, COALESCE(m.icon, ''), COALESCE(m.router_link, ''), m.parent_id
+		FROM menus m
+		JOIN role_menus rm ON m.id = rm.menu_id
+		WHERE rm.role_id = $1 AND m.status = 'Y'
+		ORDER BY m.parent_id ASC NULLS FIRST, m.sort_order ASC, m.id ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var flatMenus []domain.FlatMenu
+	for rows.Next() {
+		var fm domain.FlatMenu
+		var parentID sql.NullInt64
+		if err := rows.Scan(&fm.ID, &fm.Label, &fm.Icon, &fm.RouterLink, &parentID); err != nil {
+			return nil, err
+		}
+		if parentID.Valid {
+			val := int(parentID.Int64)
+			fm.ParentID = &val
+		}
+		flatMenus = append(flatMenus, fm)
+	}
+
+	menuMap := make(map[int]*domain.MenuItem)
+	var rootMenus []domain.MenuItem
+
+	for _, fm := range flatMenus {
+		menuMap[fm.ID] = &domain.MenuItem{
+			ID:         fm.ID,
+			Label:      fm.Label,
+			Icon:       fm.Icon,
+			RouterLink: fm.RouterLink,
+			ParentID:   fm.ParentID,
+			Children:   []domain.MenuItem{},
+			IsOpen:     false,
+		}
+	}
+
+	for _, fm := range flatMenus {
+		item := menuMap[fm.ID]
+		if fm.ParentID == nil {
+			rootMenus = append(rootMenus, *item)
+		} else {
+			parentItem, exists := menuMap[*fm.ParentID]
+			if exists {
+				parentItem.Children = append(parentItem.Children, *item)
+			}
+		}
+	}
+
+	var finalRootMenus []domain.MenuItem
+	for _, rm := range rootMenus {
+		finalRootMenus = append(finalRootMenus, *menuMap[rm.ID])
+	}
+
+	if finalRootMenus == nil {
+		finalRootMenus = []domain.MenuItem{}
+	}
+
+	return finalRootMenus, nil
+}
+
+// FindAllMenus retrieves all active system menus
+func (r *UserRepository) FindAllMenus(ctx context.Context) ([]domain.MenuResponse, error) {
+	query := "SELECT id, label, COALESCE(icon, ''), COALESCE(router_link, ''), parent_id FROM menus WHERE status = 'Y' ORDER BY parent_id ASC NULLS FIRST, sort_order ASC, id ASC"
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var menus []domain.MenuResponse
+	for rows.Next() {
+		var m domain.MenuResponse
+		var parentID sql.NullInt64
+		if err := rows.Scan(&m.ID, &m.Label, &m.Icon, &m.RouterLink, &parentID); err != nil {
+			return nil, err
+		}
+		if parentID.Valid {
+			val := int(parentID.Int64)
+			m.ParentID = &val
+		}
+		menus = append(menus, m)
+	}
+	if menus == nil {
+		menus = []domain.MenuResponse{}
+	}
+	return menus, nil
+}
+
+// FindRoleMenuIDs retrieves raw menu IDs mapped to a specific role
+func (r *UserRepository) FindRoleMenuIDs(ctx context.Context, roleID int) ([]int, error) {
+	query := "SELECT menu_id FROM role_menus WHERE role_id = $1"
+	rows, err := r.db.QueryContext(ctx, query, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var menuIDs []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		menuIDs = append(menuIDs, id)
+	}
+	if menuIDs == nil {
+		menuIDs = []int{}
+	}
+	return menuIDs, nil
+}
+
+// UpdateRoleMenus atomic transaction to update role and menu mapping
+func (r *UserRepository) UpdateRoleMenus(ctx context.Context, roleID int, menuIDs []int) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, "DELETE FROM role_menus WHERE role_id = $1", roleID)
+	if err != nil {
+		return err
+	}
+
+	for _, mID := range menuIDs {
+		_, err = tx.ExecContext(ctx, "INSERT INTO role_menus (role_id, menu_id) VALUES ($1, $2)", roleID, mID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// InsertRole creates a new role with default permissions template
+func (r *UserRepository) InsertRole(ctx context.Context, roleName string) (int, error) {
+	defaultPermissions := `{"dashboard":{"create":"N","read":"Y","update":"N","delete":"N"},"master":{"create":"N","read":"Y","update":"N","delete":"N"},"inventory":{"create":"N","read":"Y","update":"N","delete":"N"},"cashier":{"create":"N","read":"Y","update":"N","delete":"N"},"reports":{"create":"N","read":"Y","update":"N","delete":"N"}}`
+	query := `
+		INSERT INTO roles (role_name, permissions, created_by, updated_by)
+		VALUES ($1, $2::jsonb, 'admin', 'admin')
+		RETURNING id
+	`
+	var id int
+	err := r.db.QueryRowContext(ctx, query, roleName, defaultPermissions).Scan(&id)
+	return id, err
+}
+
+// UpdateRole updates an existing role's name
+func (r *UserRepository) UpdateRole(ctx context.Context, id int, roleName string) error {
+	query := `
+		UPDATE roles 
+		SET role_name = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2 AND status = 'Y'
+	`
+	_, err := r.db.ExecContext(ctx, query, roleName, id)
+	return err
+}
+
+// DeleteRole soft deletes a role by setting status to 'N'
+func (r *UserRepository) DeleteRole(ctx context.Context, id int) error {
+	query := `
+		UPDATE roles 
+		SET status = 'N', updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`
+	_, err := r.db.ExecContext(ctx, query, id)
+	return err
+}
+

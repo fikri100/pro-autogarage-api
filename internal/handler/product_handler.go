@@ -181,3 +181,73 @@ func (h *ProductHandler) GetStockLogs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(logs)
 }
 
+// GetCategories HTTP Handler
+func (h *ProductHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
+	categories, err := h.service.GetAllCategories(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(categories)
+}
+
+// CreateCategory HTTP Handler
+func (h *ProductHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
+	var req domain.CategoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	id, err := h.service.CreateCategory(r.Context(), req.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintf(w, `{"id": %d, "name": "%s"}`, id, req.Name)
+}
+
+// UpdateCategory HTTP Handler
+func (h *ProductHandler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+	var req domain.CategoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err = h.service.UpdateCategory(r.Context(), id, req.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status": "success"}`)
+}
+
+// DeleteCategory HTTP Handler
+func (h *ProductHandler) DeleteCategory(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID format", http.StatusBadRequest)
+		return
+	}
+	err = h.service.DeleteCategory(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status": "success"}`)
+}
+
+

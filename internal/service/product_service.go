@@ -161,3 +161,30 @@ func (s *ProductService) GetStockLogs(ctx context.Context, prodID int) ([]*domai
 	return s.repo.FindStockLogsByProductID(ctx, prodID)
 }
 
+// GetAllCategories retrieves all active categories
+func (s *ProductService) GetAllCategories(ctx context.Context) ([]domain.Category, error) {
+	return s.repo.FindAllCategories(ctx)
+}
+
+// CreateCategory creates a new category record
+func (s *ProductService) CreateCategory(ctx context.Context, name string) (int, error) {
+	if name == "" {
+		return 0, errors.New("Nama kategori wajib diisi")
+	}
+	return s.repo.InsertCategory(ctx, name)
+}
+
+// UpdateCategory updates an existing category
+func (s *ProductService) UpdateCategory(ctx context.Context, id int, name string) error {
+	if name == "" {
+		return errors.New("Nama kategori wajib diisi")
+	}
+	return s.repo.UpdateCategory(ctx, id, name)
+}
+
+// DeleteCategory soft deletes a category
+func (s *ProductService) DeleteCategory(ctx context.Context, id int) error {
+	return s.repo.DeleteCategory(ctx, id)
+}
+
+

@@ -55,3 +55,15 @@ type StockLog struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+// Category represents a product/service category
+type Category struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// CategoryRequest represents request payload to create/update a category
+type CategoryRequest struct {
+	Name string `json:"name"`
+}
+
+

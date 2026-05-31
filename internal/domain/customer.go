@@ -29,3 +29,34 @@ type CustomerRequest struct {
 	IsSelfService bool    `json:"isSelfService"`
 	Password      *string `json:"password"`
 }
+
+// Vehicle represents a customer's vehicle
+type Vehicle struct {
+	ID           int    `json:"id"`
+	CustomerID   int    `json:"customerId"`
+	LicensePlate string `json:"licensePlate"`
+	Brand        string `json:"brand"`
+	Model        string `json:"model"`
+	YearMade     int    `json:"yearMade"`
+	Transmission string `json:"transmission"`
+}
+
+// VehicleRequest represents the request payload to add a vehicle
+type VehicleRequest struct {
+	CustomerID   int    `json:"customerId"`
+	LicensePlate string `json:"licensePlate"`
+	Brand        string `json:"brand"`
+	Model        string `json:"model"`
+	YearMade     int    `json:"yearMade"`
+	Transmission string `json:"transmission"`
+}
+
+// UpdateVehicleRequest represents the request payload to update a vehicle
+type UpdateVehicleRequest struct {
+	LicensePlate string `json:"licensePlate"`
+	Brand        string `json:"brand"`
+	Model        string `json:"model"`
+	YearMade     int    `json:"yearMade"`
+	Transmission string `json:"transmission"`
+}
+

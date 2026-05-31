@@ -294,7 +294,7 @@ func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID i
 	// 5. Update transaction columns: paid status, discount, tax, total, method, and timestamps
 	updateTransQuery := `
 		UPDATE transactions
-		SET payment_status = 'PAID', payment_method = $1, total_amount = $2, updated_by = $3, updated_at = CURRENT_TIMESTAMP
+		SET payment_status = 'PAID', payment_method = $1, total_amount = $2, transaction_date = CURRENT_TIMESTAMP, updated_by = $3, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $4
 	`
 	_, err = tx.ExecContext(ctx, updateTransQuery, paymentMethod, total, createdBy, transID)
