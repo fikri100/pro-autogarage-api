@@ -29,17 +29,32 @@ func (r *CustomerRepository) Insert(ctx context.Context, c *domain.Customer) err
 	return err
 }
 
-// FindAll retrieves all active customers
-func (r *CustomerRepository) FindAll(ctx context.Context) ([]*domain.Customer, error) {
+// FindAll retrieves active customers with pagination and search
+func (r *CustomerRepository) FindAll(ctx context.Context, search string, limit int, offset int) ([]*domain.Customer, int, error) {
+	// First, get the total count for pagination
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM customers 
+		WHERE status = 'Y' AND (name ILIKE $1 OR phone ILIKE $1)
+	`
+	var total int
+	searchParam := "%" + search + "%"
+	err := r.db.QueryRowContext(ctx, countQuery, searchParam).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Then, get the paginated data
 	query := `
 		SELECT id, name, phone, address, email, username, is_self_service, status, created_by, created_at, updated_by, updated_at
 		FROM customers
-		WHERE status = 'Y'
+		WHERE status = 'Y' AND (name ILIKE $1 OR phone ILIKE $1)
 		ORDER BY id DESC
+		LIMIT $2 OFFSET $3
 	`
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, searchParam, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -50,11 +65,11 @@ func (r *CustomerRepository) FindAll(ctx context.Context) ([]*domain.Customer, e
 			&c.ID, &c.Name, &c.Phone, &c.Address, &c.Email, &c.Username, &c.IsSelfService,
 			&c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedBy, &c.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		customers = append(customers, &c)
 	}
-	return customers, nil
+	return customers, total, nil
 }
 
 // FindByID retrieves a specific customer by ID

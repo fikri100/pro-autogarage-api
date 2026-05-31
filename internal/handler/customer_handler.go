@@ -42,7 +42,21 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 
 // GetAllCustomers HTTP Handler
 func (h *CustomerHandler) GetAllCustomers(w http.ResponseWriter, r *http.Request) {
-	customers, err := h.service.GetAllCustomers(r.Context())
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	search := r.URL.Query().Get("search")
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	customers, total, err := h.service.GetAllCustomers(r.Context(), search, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -52,7 +66,27 @@ func (h *CustomerHandler) GetAllCustomers(w http.ResponseWriter, r *http.Request
 	if customers == nil {
 		customers = []*domain.Customer{} // return empty array instead of null
 	}
-	json.NewEncoder(w).Encode(customers)
+	
+	pageStart := (page - 1) * limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(customers) - 1
+	if pageStart > 0 && len(customers) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.Customer]{
+		Data: customers,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+	
+	json.NewEncoder(w).Encode(response)
 }
 
 // GetCustomerByID HTTP Handler

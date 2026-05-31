@@ -51,7 +51,20 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 		lowStock = true
 	}
 
-	products, err := h.service.GetAllProducts(r.Context(), searchQuery, itemType, lowStock)
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	products, total, err := h.service.GetAllProducts(r.Context(), searchQuery, itemType, lowStock, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -61,7 +74,27 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 	if products == nil {
 		products = []*domain.Product{} // return empty list instead of null
 	}
-	json.NewEncoder(w).Encode(products)
+	
+	pageStart := (page - 1) * limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(products) - 1
+	if pageStart > 0 && len(products) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.Product]{
+		Data: products,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+	
+	json.NewEncoder(w).Encode(response)
 }
 
 // GetProductByID HTTP Handler

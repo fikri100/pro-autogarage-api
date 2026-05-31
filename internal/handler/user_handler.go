@@ -76,13 +76,51 @@ func (h *UserHandler) GetRoles(w http.ResponseWriter, r *http.Request) {
 
 // GetEmployees HTTP Handler
 func (h *UserHandler) GetEmployees(w http.ResponseWriter, r *http.Request) {
-	emps, err := h.service.GetEmployees(r.Context())
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	search := r.URL.Query().Get("search")
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	emps, total, err := h.service.GetEmployees(r.Context(), search, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(emps)
+	if emps == nil {
+		emps = []*domain.Employee{}
+	}
+
+	pageStart := (page-1)*limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(emps) - 1
+	if pageStart > 0 && len(emps) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.Employee]{
+		Data: emps,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // Login HTTP Handler

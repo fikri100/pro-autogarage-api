@@ -107,12 +107,32 @@ func (r *UserRepository) GetRoles(ctx context.Context) ([]*domain.Role, error) {
 }
 
 
-// GetEmployees gets all active employees
-func (r *UserRepository) GetEmployees(ctx context.Context) ([]*domain.Employee, error) {
-	query := `SELECT id, name, phone, COALESCE(address, ''), position FROM employees WHERE status = 'Y' ORDER BY name ASC`
-	rows, err := r.db.QueryContext(ctx, query)
+// GetEmployees gets all active employees with pagination and search
+func (r *UserRepository) GetEmployees(ctx context.Context, search string, limit, offset int) ([]*domain.Employee, int, error) {
+	// First, get the total count for pagination
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM employees 
+		WHERE status = 'Y' AND (name ILIKE $1 OR phone ILIKE $1 OR position ILIKE $1)
+	`
+	var total int
+	searchParam := "%" + search + "%"
+	err := r.db.QueryRowContext(ctx, countQuery, searchParam).Scan(&total)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	// Then, get the paginated data
+	query := `
+		SELECT id, name, phone, COALESCE(address, ''), position 
+		FROM employees 
+		WHERE status = 'Y' AND (name ILIKE $1 OR phone ILIKE $1 OR position ILIKE $1)
+		ORDER BY name ASC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := r.db.QueryContext(ctx, query, searchParam, limit, offset)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -120,11 +140,11 @@ func (r *UserRepository) GetEmployees(ctx context.Context) ([]*domain.Employee, 
 	for rows.Next() {
 		var e domain.Employee
 		if err := rows.Scan(&e.ID, &e.Name, &e.Phone, &e.Address, &e.Position); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		emps = append(emps, &e)
 	}
-	return emps, nil
+	return emps, total, nil
 }
 
 // CreateEmployee creates a new employee and returns the generated ID

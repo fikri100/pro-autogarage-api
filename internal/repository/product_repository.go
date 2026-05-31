@@ -30,37 +30,49 @@ func (r *ProductRepository) Insert(ctx context.Context, p *domain.Product) error
 	return err
 }
 
-// FindAll retrieves products with optional dynamic filters
-func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType string, lowStock bool) ([]*domain.Product, error) {
-	query := `
-		SELECT id, code, name, item_type, category, purchase_price, sale_price, stock_quantity, min_stock_limit, status, created_by, created_at, updated_by, updated_at
-		FROM products
-		WHERE status = 'Y'
-	`
-	var args []interface{}
+// FindAll retrieves products with optional dynamic filters and pagination
+func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType string, lowStock bool, limit int, offset int) ([]*domain.Product, int, error) {
+	// 1. Build the base conditions
+	var countArgs []interface{}
+	conditionQuery := "WHERE status = 'Y'"
 	placeholderIdx := 1
 
 	if search != "" {
-		query += fmt.Sprintf(" AND (code ILIKE $%d OR name ILIKE $%d OR category ILIKE $%d)", placeholderIdx, placeholderIdx, placeholderIdx)
-		args = append(args, "%"+search+"%")
+		conditionQuery += fmt.Sprintf(" AND (code ILIKE $%d OR name ILIKE $%d OR category ILIKE $%d)", placeholderIdx, placeholderIdx, placeholderIdx)
+		countArgs = append(countArgs, "%"+search+"%")
 		placeholderIdx++
 	}
 
 	if itemType != "" {
-		query += fmt.Sprintf(" AND item_type = $%d", placeholderIdx)
-		args = append(args, itemType)
+		conditionQuery += fmt.Sprintf(" AND item_type = $%d", placeholderIdx)
+		countArgs = append(countArgs, itemType)
 		placeholderIdx++
 	}
 
 	if lowStock {
-		query += " AND item_type = 'SPR' AND stock_quantity <= min_stock_limit"
+		conditionQuery += " AND item_type = 'SPR' AND stock_quantity <= min_stock_limit"
 	}
 
-	query += " ORDER BY id DESC"
-
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	// 2. Count total rows
+	countQueryStr := "SELECT COUNT(*) FROM products " + conditionQuery
+	var total int
+	err := r.db.QueryRowContext(ctx, countQueryStr, countArgs...).Scan(&total)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	// 3. Fetch paginated data
+	dataQueryStr := `
+		SELECT id, code, name, item_type, category, purchase_price, sale_price, stock_quantity, min_stock_limit, status, created_by, created_at, updated_by, updated_at
+		FROM products ` + conditionQuery + `
+		ORDER BY id DESC
+		LIMIT $` + fmt.Sprint(placeholderIdx) + ` OFFSET $` + fmt.Sprint(placeholderIdx+1)
+
+	args := append(countArgs, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, dataQueryStr, args...)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -72,11 +84,11 @@ func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType
 			&p.PurchasePrice, &p.SalePrice, &p.StockQuantity, &p.MinStockLimit,
 			&p.Status, &p.CreatedBy, &p.CreatedAt, &p.UpdatedBy, &p.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		products = append(products, &p)
 	}
-	return products, nil
+	return products, total, nil
 }
 
 // FindByID retrieves a product by ID

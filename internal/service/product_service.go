@@ -71,8 +71,15 @@ func (s *ProductService) CreateProduct(ctx context.Context, req domain.ProductRe
 }
 
 // GetAllProducts retrieves products with optional filters
-func (s *ProductService) GetAllProducts(ctx context.Context, search string, itemType string, lowStock bool) ([]*domain.Product, error) {
-	return s.repo.FindAll(ctx, search, itemType, lowStock)
+func (s *ProductService) GetAllProducts(ctx context.Context, search string, itemType string, lowStock bool, page int, limit int) ([]*domain.Product, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+	return s.repo.FindAll(ctx, search, itemType, lowStock, limit, offset)
 }
 
 // GetProductByID returns a specific product by ID

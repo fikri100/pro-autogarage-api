@@ -40,9 +40,16 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, req domain.Custome
 	return customer, nil
 }
 
-// GetAllCustomers returns all active customers
-func (s *CustomerService) GetAllCustomers(ctx context.Context) ([]*domain.Customer, error) {
-	return s.repo.FindAll(ctx)
+// GetAllCustomers returns active customers with pagination and search
+func (s *CustomerService) GetAllCustomers(ctx context.Context, search string, page int, limit int) ([]*domain.Customer, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+	return s.repo.FindAll(ctx, search, limit, offset)
 }
 
 // GetCustomerByID returns a customer by ID

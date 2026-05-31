@@ -66,9 +66,10 @@ func (s *UserService) GetRoles(ctx context.Context) ([]*domain.Role, error) {
 }
 
 
-// GetEmployees gets all active employees
-func (s *UserService) GetEmployees(ctx context.Context) ([]*domain.Employee, error) {
-	return s.repo.GetEmployees(ctx)
+// GetEmployees gets all active employees with pagination and search
+func (s *UserService) GetEmployees(ctx context.Context, search string, page, limit int) ([]*domain.Employee, int, error) {
+	offset := (page - 1) * limit
+	return s.repo.GetEmployees(ctx, search, limit, offset)
 }
 
 // Login validates username and password and returns UserResponse with menus
