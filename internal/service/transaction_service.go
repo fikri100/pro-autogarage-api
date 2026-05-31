@@ -15,9 +15,16 @@ func NewTransactionService(transactionRepo *repository.TransactionRepository) *T
 	return &TransactionService{transactionRepo: transactionRepo}
 }
 
-// GetReadyWorkOrders lists completed WOs ready to be billed
-func (s *TransactionService) GetReadyWorkOrders(ctx context.Context) ([]*domain.WorkOrder, error) {
-	return s.transactionRepo.FindAllReadyForCashier(ctx)
+// GetReadyWorkOrders lists completed WOs ready to be billed with pagination and search
+func (s *TransactionService) GetReadyWorkOrders(ctx context.Context, search string, page int, limit int) ([]*domain.WorkOrder, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+	return s.transactionRepo.FindAllReadyForCashier(ctx, search, limit, offset)
 }
 
 // GetTransactionByWO loads draft invoice details

@@ -31,15 +31,62 @@ func (r *CashflowRepository) Insert(ctx context.Context, c *domain.Cashflow) err
 	return err
 }
 
-// FindAll retrieves all active cashflow records based on filters
-func (r *CashflowRepository) FindAll(ctx context.Context, typeFilter string, categoryFilter string, startDate string, endDate string) ([]*domain.Cashflow, error) {
+// FindAll retrieves active cashflow records based on filters with pagination and search
+func (r *CashflowRepository) FindAll(ctx context.Context, typeFilter string, categoryFilter string, startDate string, endDate string, search string, limit int, offset int) ([]*domain.Cashflow, int, error) {
+	// First, get the total count for pagination
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM cashflows
+		WHERE status = 'Y'
+	`
+	var countArgs []interface{}
+	placeholderCount := 1
+
+	if typeFilter != "" {
+		countQuery += fmt.Sprintf(" AND cashflow_type = $%d", placeholderCount)
+		countArgs = append(countArgs, typeFilter)
+		placeholderCount++
+	}
+
+	if categoryFilter != "" {
+		countQuery += fmt.Sprintf(" AND category = $%d", placeholderCount)
+		countArgs = append(countArgs, categoryFilter)
+		placeholderCount++
+	}
+
+	if startDate != "" && endDate != "" {
+		countQuery += fmt.Sprintf(" AND flow_date::date BETWEEN $%d AND $%d", placeholderCount, placeholderCount+1)
+		countArgs = append(countArgs, startDate, endDate)
+		placeholderCount += 2
+	} else if startDate != "" {
+		countQuery += fmt.Sprintf(" AND flow_date::date >= $%d", placeholderCount)
+		countArgs = append(countArgs, startDate)
+		placeholderCount++
+	} else if endDate != "" {
+		countQuery += fmt.Sprintf(" AND flow_date::date <= $%d", placeholderCount)
+		countArgs = append(countArgs, endDate)
+		placeholderCount++
+	}
+
+	searchParam := "%" + search + "%"
+	countQuery += fmt.Sprintf(" AND (description ILIKE $%d OR category ILIKE $%d)", placeholderCount, placeholderCount)
+	countArgs = append(countArgs, searchParam)
+	placeholderCount++
+
+	var total int
+	err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Then, get the paginated data
 	query := `
 		SELECT id, cashflow_type, amount, category, description, transaction_id, flow_date, status, created_by, created_at, updated_by, updated_at
 		FROM cashflows
 		WHERE status = 'Y'
 	`
 	var args []interface{}
-	placeholderCount := 1
+	placeholderCount = 1
 
 	if typeFilter != "" {
 		query += fmt.Sprintf(" AND cashflow_type = $%d", placeholderCount)
@@ -67,11 +114,16 @@ func (r *CashflowRepository) FindAll(ctx context.Context, typeFilter string, cat
 		placeholderCount++
 	}
 
-	query += " ORDER BY flow_date DESC, id DESC"
+	query += fmt.Sprintf(" AND (description ILIKE $%d OR category ILIKE $%d)", placeholderCount, placeholderCount)
+	args = append(args, searchParam)
+	placeholderCount++
+
+	query += fmt.Sprintf(" ORDER BY flow_date DESC, id DESC LIMIT $%d OFFSET $%d", placeholderCount, placeholderCount+1)
+	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -85,7 +137,7 @@ func (r *CashflowRepository) FindAll(ctx context.Context, typeFilter string, cat
 			&c.FlowDate, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedBy, &c.UpdatedAt,
 		)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if desc.Valid {
 			c.Description = &desc.String
@@ -97,7 +149,7 @@ func (r *CashflowRepository) FindAll(ctx context.Context, typeFilter string, cat
 		list = append(list, &c)
 	}
 
-	return list, nil
+	return list, total, nil
 }
 
 // SoftDelete soft deletes a manual cashflow entry

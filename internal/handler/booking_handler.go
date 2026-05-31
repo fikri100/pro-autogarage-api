@@ -38,8 +38,22 @@ func (h *BookingHandler) CreateBooking(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BookingHandler) GetAllBookings(w http.ResponseWriter, r *http.Request) {
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	search := r.URL.Query().Get("search")
 	statusFilter := r.URL.Query().Get("status")
-	bookings, err := h.service.GetAllBookings(r.Context(), statusFilter)
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	bookings, total, err := h.service.GetAllBookings(r.Context(), search, statusFilter, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -49,7 +63,27 @@ func (h *BookingHandler) GetAllBookings(w http.ResponseWriter, r *http.Request) 
 	if bookings == nil {
 		bookings = []*domain.Booking{}
 	}
-	json.NewEncoder(w).Encode(bookings)
+
+	pageStart := (page - 1) * limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(bookings) - 1
+	if pageStart > 0 && len(bookings) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.Booking]{
+		Data: bookings,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *BookingHandler) ConfirmBooking(w http.ResponseWriter, r *http.Request) {

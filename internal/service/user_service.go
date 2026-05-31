@@ -18,9 +18,10 @@ func NewUserService(repo *repository.UserRepository) *UserService {
 	return &UserService{repo: repo}
 }
 
-// GetAllUsers retrieves all users
-func (s *UserService) GetAllUsers(ctx context.Context) ([]*domain.User, error) {
-	return s.repo.FindAllUsers(ctx)
+// GetAllUsers retrieves all users with pagination and search
+func (s *UserService) GetAllUsers(ctx context.Context, search string, page, limit int) ([]*domain.User, int, error) {
+	offset := (page - 1) * limit
+	return s.repo.FindAllUsers(ctx, search, limit, offset)
 }
 
 // CreateUser validates and creates a new user, hashing the password

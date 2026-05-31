@@ -172,8 +172,35 @@ func (r *TransactionRepository) GetTransactionByWO(ctx context.Context, woID int
 	return &t, details, nil
 }
 
-// FindAllReadyForCashier gets COMPLETED work orders that do not have PAID transactions
-func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context) ([]*domain.WorkOrder, error) {
+// FindAllReadyForCashier gets COMPLETED work orders that do not have PAID transactions with search and pagination
+func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context, search string, limit int, offset int) ([]*domain.WorkOrder, int, error) {
+	// First, get the total count for pagination
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM work_orders wo
+		JOIN vehicles v ON wo.vehicle_id = v.id
+		JOIN customers c ON v.customer_id = c.id
+		LEFT JOIN employees e ON wo.mechanic_id = e.id
+		WHERE wo.status = 'Y' AND wo.work_status = 'COMPLETED'
+		AND wo.id NOT IN (
+			SELECT work_order_id FROM transactions WHERE payment_status = 'PAID' AND status = 'Y'
+		)
+	`
+	var countArgs []interface{}
+	placeholderCount := 1
+
+	searchParam := "%" + search + "%"
+	countQuery += fmt.Sprintf(" AND (v.license_plate ILIKE $%d OR c.name ILIKE $%d OR e.name ILIKE $%d)", placeholderCount, placeholderCount, placeholderCount)
+	countArgs = append(countArgs, searchParam)
+	placeholderCount++
+
+	var total int
+	err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Then, get the paginated data
 	query := `
 		SELECT 
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
@@ -187,11 +214,20 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context) ([]*
 		AND wo.id NOT IN (
 			SELECT work_order_id FROM transactions WHERE payment_status = 'PAID' AND status = 'Y'
 		)
-		ORDER BY wo.id DESC
 	`
-	rows, err := r.db.QueryContext(ctx, query)
+	var args []interface{}
+	placeholderCount = 1
+
+	query += fmt.Sprintf(" AND (v.license_plate ILIKE $%d OR c.name ILIKE $%d OR e.name ILIKE $%d)", placeholderCount, placeholderCount, placeholderCount)
+	args = append(args, searchParam)
+	placeholderCount++
+
+	query += fmt.Sprintf(" ORDER BY wo.id DESC LIMIT $%d OFFSET $%d", placeholderCount, placeholderCount+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -204,7 +240,7 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context) ([]*
 			&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
 			&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		if mechName.Valid {
@@ -212,7 +248,7 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context) ([]*
 		}
 		wos = append(wos, &wo)
 	}
-	return wos, nil
+	return wos, total, nil
 }
 
 // FinalizePaymentTx performs the cashier finalized checkout in an atomic database transaction

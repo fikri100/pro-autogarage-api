@@ -62,9 +62,16 @@ func (s *CashflowService) CreateManualCashflow(ctx context.Context, req domain.C
 	return cashflow, nil
 }
 
-// GetAllCashflows retrieves list of cashflows with filters
-func (s *CashflowService) GetAllCashflows(ctx context.Context, typeFilter string, categoryFilter string, startDate string, endDate string) ([]*domain.Cashflow, error) {
-	return s.repo.FindAll(ctx, typeFilter, categoryFilter, startDate, endDate)
+// GetAllCashflows retrieves list of cashflows with filters, search, and pagination
+func (s *CashflowService) GetAllCashflows(ctx context.Context, typeFilter string, categoryFilter string, startDate string, endDate string, search string, page int, limit int) ([]*domain.Cashflow, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+	return s.repo.FindAll(ctx, typeFilter, categoryFilter, startDate, endDate, search, limit, offset)
 }
 
 // DeleteCashflow soft deletes a manual cashflow entry

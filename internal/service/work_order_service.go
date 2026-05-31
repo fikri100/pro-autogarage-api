@@ -43,9 +43,16 @@ func (s *WorkOrderService) CreateWorkOrder(ctx context.Context, req domain.WorkO
 	return s.woRepo.FindByID(ctx, wo.ID)
 }
 
-// GetAllActiveWorkOrders retrieves active ones for the dashboard
-func (s *WorkOrderService) GetAllActiveWorkOrders(ctx context.Context) ([]*domain.WorkOrder, error) {
-	return s.woRepo.FindAllActive(ctx)
+// GetAllActiveWorkOrders retrieves active ones for the dashboard with pagination and search
+func (s *WorkOrderService) GetAllActiveWorkOrders(ctx context.Context, search string, page int, limit int) ([]*domain.WorkOrder, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+	return s.woRepo.FindAllActive(ctx, search, limit, offset)
 }
 
 // GetWorkOrder returns a specific WO

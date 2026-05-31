@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"pro-autogarage-api/internal/domain"
@@ -31,8 +32,37 @@ func (r *BookingRepository) Insert(ctx context.Context, b *domain.Booking) error
 	return err
 }
 
-// FindAll retrieves bookings with joins to customers and vehicles
-func (r *BookingRepository) FindAll(ctx context.Context, statusFilter string) ([]*domain.Booking, error) {
+// FindAll retrieves bookings with joins to customers and vehicles with pagination and search
+func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFilter string, limit int, offset int) ([]*domain.Booking, int, error) {
+	// First, get the total count for pagination
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM bookings b
+		JOIN customers c ON b.customer_id = c.id
+		JOIN vehicles v ON b.vehicle_id = v.id
+		WHERE b.status = 'Y'
+	`
+	var countArgs []interface{}
+	placeholderCount := 1
+
+	searchParam := "%" + search + "%"
+	countQuery += fmt.Sprintf(" AND (c.name ILIKE $%d OR c.phone ILIKE $%d OR v.license_plate ILIKE $%d)", placeholderCount, placeholderCount, placeholderCount)
+	countArgs = append(countArgs, searchParam)
+	placeholderCount++
+
+	if statusFilter != "" {
+		countQuery += fmt.Sprintf(" AND b.operational_status = $%d", placeholderCount)
+		countArgs = append(countArgs, statusFilter)
+		placeholderCount++
+	}
+
+	var total int
+	err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Then, get the paginated data
 	query := `
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
@@ -46,15 +76,25 @@ func (r *BookingRepository) FindAll(ctx context.Context, statusFilter string) ([
 		WHERE b.status = 'Y'
 	`
 	var args []interface{}
+	placeholderCount = 1
+
+	query += fmt.Sprintf(" AND (c.name ILIKE $%d OR c.phone ILIKE $%d OR v.license_plate ILIKE $%d)", placeholderCount, placeholderCount, placeholderCount)
+	args = append(args, searchParam)
+	placeholderCount++
+
 	if statusFilter != "" {
-		query += " AND b.operational_status = $1"
+		query += fmt.Sprintf(" AND b.operational_status = $%d", placeholderCount)
 		args = append(args, statusFilter)
+		placeholderCount++
 	}
-	query += " ORDER BY b.booking_date DESC, b.booking_time DESC"
+	
+	// Dynamic priority order: PENDING first, then date DESC, time DESC
+	query += fmt.Sprintf(" ORDER BY CASE WHEN b.operational_status = 'PENDING' THEN 0 ELSE 1 END ASC, b.booking_date DESC, b.booking_time DESC LIMIT $%d OFFSET $%d", placeholderCount, placeholderCount+1)
+	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -70,7 +110,7 @@ func (r *BookingRepository) FindAll(ctx context.Context, statusFilter string) ([
 			&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
 			&b.VehicleCustomerID, &b.VehicleOwnerName,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		b.BookingDate = bDate.Format("2006-01-02")
@@ -78,7 +118,7 @@ func (r *BookingRepository) FindAll(ctx context.Context, statusFilter string) ([
 		bookings = append(bookings, &b)
 	}
 
-	return bookings, nil
+	return bookings, total, nil
 }
 
 // FindByID retrieves a booking by ID

@@ -20,16 +20,51 @@ func NewUserHandler(service *service.UserService) *UserHandler {
 
 // GetAllUsers HTTP Handler
 func (h *UserHandler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.service.GetAllUsers(r.Context())
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	search := r.URL.Query().Get("search")
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	users, total, err := h.service.GetAllUsers(r.Context(), search, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if users == nil {
 		users = []*domain.User{}
 	}
-	json.NewEncoder(w).Encode(users)
+
+	pageStart := (page-1)*limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(users) - 1
+	if pageStart > 0 && len(users) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.User]{
+		Data: users,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // CreateUser HTTP Handler

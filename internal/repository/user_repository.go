@@ -15,19 +15,35 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// FindAllUsers gets users with their role and employee details
-func (r *UserRepository) FindAllUsers(ctx context.Context) ([]*domain.User, error) {
+// FindAllUsers gets users with their role and employee details with pagination and search
+func (r *UserRepository) FindAllUsers(ctx context.Context, search string, limit, offset int) ([]*domain.User, int, error) {
+	searchParam := "%" + search + "%"
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM users u
+		JOIN roles r ON u.role_id = r.id
+		JOIN employees e ON u.employee_id = e.id
+		WHERE u.status = 'Y' AND (u.username ILIKE $1 OR e.name ILIKE $1 OR r.role_name ILIKE $1)
+	`
+	var total int
+	err := r.db.QueryRowContext(ctx, countQuery, searchParam).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	query := `
 		SELECT u.id, u.username, u.role_id, r.role_name, u.employee_id, e.name as employee_name, u.status, u.created_at
 		FROM users u
 		JOIN roles r ON u.role_id = r.id
 		JOIN employees e ON u.employee_id = e.id
-		WHERE u.status = 'Y'
+		WHERE u.status = 'Y' AND (u.username ILIKE $1 OR e.name ILIKE $1 OR r.role_name ILIKE $1)
 		ORDER BY u.id ASC
+		LIMIT $2 OFFSET $3
 	`
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, searchParam, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -35,11 +51,11 @@ func (r *UserRepository) FindAllUsers(ctx context.Context) ([]*domain.User, erro
 	for rows.Next() {
 		var u domain.User
 		if err := rows.Scan(&u.ID, &u.Username, &u.RoleID, &u.RoleName, &u.EmployeeID, &u.EmployeeName, &u.Status, &u.CreatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		users = append(users, &u)
 	}
-	return users, nil
+	return users, total, nil
 }
 
 // InsertUser creates a new user

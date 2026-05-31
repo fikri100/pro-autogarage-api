@@ -20,7 +20,21 @@ func NewTransactionHandler(service *service.TransactionService) *TransactionHand
 
 // GetReadyWorkOrders HTTP Handler
 func (h *TransactionHandler) GetReadyWorkOrders(w http.ResponseWriter, r *http.Request) {
-	wos, err := h.service.GetReadyWorkOrders(r.Context())
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	search := r.URL.Query().Get("search")
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	wos, total, err := h.service.GetReadyWorkOrders(r.Context(), search, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -30,7 +44,27 @@ func (h *TransactionHandler) GetReadyWorkOrders(w http.ResponseWriter, r *http.R
 	if wos == nil {
 		wos = []*domain.WorkOrder{}
 	}
-	json.NewEncoder(w).Encode(wos)
+
+	pageStart := (page - 1) * limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(wos) - 1
+	if pageStart > 0 && len(wos) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.WorkOrder]{
+		Data: wos,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // GetTransactionByWO HTTP Handler

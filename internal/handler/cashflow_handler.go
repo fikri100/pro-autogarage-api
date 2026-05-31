@@ -39,15 +39,28 @@ func (h *CashflowHandler) CreateManualCashflow(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(cashflow)
 }
 
-// GetAllCashflows retrieves list of active cashflows with filter
+// GetAllCashflows retrieves list of active cashflows with filter, search, and pagination
 func (h *CashflowHandler) GetAllCashflows(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
+	pageStr := query.Get("page")
+	limitStr := query.Get("limit")
+	search := query.Get("search")
 	typeFilter := query.Get("type")
 	categoryFilter := query.Get("category")
 	startDate := query.Get("startDate")
 	endDate := query.Get("endDate")
 
-	list, err := h.service.GetAllCashflows(r.Context(), typeFilter, categoryFilter, startDate, endDate)
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 10
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	list, total, err := h.service.GetAllCashflows(r.Context(), typeFilter, categoryFilter, startDate, endDate, search, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -57,7 +70,27 @@ func (h *CashflowHandler) GetAllCashflows(w http.ResponseWriter, r *http.Request
 	if list == nil {
 		list = []*domain.Cashflow{}
 	}
-	json.NewEncoder(w).Encode(list)
+
+	pageStart := (page - 1) * limit + 1
+	if total == 0 {
+		pageStart = 0
+	}
+	pageEnd := pageStart + len(list) - 1
+	if pageStart > 0 && len(list) == 0 {
+		pageEnd = 0
+	}
+
+	response := domain.PaginatedResponse[*domain.Cashflow]{
+		Data: list,
+		PageResponse: domain.PageResponse{
+			PageStart: pageStart,
+			PageEnd:   pageEnd,
+			Limit:     limit,
+			Total:     total,
+		},
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // DeleteCashflow soft deletes a manual cashflow entry
