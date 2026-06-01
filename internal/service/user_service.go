@@ -30,6 +30,26 @@ func (s *UserService) CreateUser(ctx context.Context, req domain.UserRequest, ad
 		return errors.New("username, password, and roleId are required")
 	}
 
+	// Check if username is already taken
+	taken, err := s.repo.IsUsernameTaken(ctx, req.Username)
+	if err != nil {
+		return err
+	}
+	if taken {
+		return errors.New("username sudah terdaftar, silakan gunakan username lain")
+	}
+
+	// Check if employee is already mapped
+	if req.EmployeeID != 0 {
+		mapped, err := s.repo.IsEmployeeMapped(ctx, req.EmployeeID)
+		if err != nil {
+			return err
+		}
+		if mapped {
+			return errors.New("karyawan ini sudah memiliki akun pengguna")
+		}
+	}
+
 	// If EmployeeID is not provided, create a new employee first
 	if req.EmployeeID == 0 {
 		if req.EmployeeName == "" || req.Position == "" {

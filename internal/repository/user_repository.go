@@ -394,3 +394,20 @@ func (r *UserRepository) DeleteRole(ctx context.Context, id int) error {
 	return err
 }
 
+// IsUsernameTaken checks if a username is already registered and active
+func (r *UserRepository) IsUsernameTaken(ctx context.Context, username string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 AND status = 'Y')`
+	var exists bool
+	err := r.db.QueryRowContext(ctx, query, username).Scan(&exists)
+	return exists, err
+}
+
+// IsEmployeeMapped checks if an employee already has an active user account
+func (r *UserRepository) IsEmployeeMapped(ctx context.Context, employeeID int) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE employee_id = $1 AND status = 'Y')`
+	var exists bool
+	err := r.db.QueryRowContext(ctx, query, employeeID).Scan(&exists)
+	return exists, err
+}
+
+
