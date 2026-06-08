@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 	"time"
-	
+
 	"pro-autogarage-api/internal/handler"
 	"pro-autogarage-api/internal/repository"
 	"pro-autogarage-api/internal/service"
@@ -15,7 +15,6 @@ import (
 
 	"github.com/joho/godotenv"
 )
-
 
 func main() {
 	// Load environment variables
@@ -164,7 +163,7 @@ func main() {
 	mux.HandleFunc("GET /api/users", userHandler.GetAllUsers)
 	mux.HandleFunc("POST /api/users", userHandler.CreateUser)
 	mux.HandleFunc("PUT /api/users/{id}", userHandler.UpdateUser)
-	
+
 	mux.HandleFunc("POST /api/login", userHandler.Login)
 	mux.HandleFunc("GET /api/roles", userHandler.GetRoles)
 
@@ -172,7 +171,7 @@ func main() {
 	mux.HandleFunc("GET /api/menus", userHandler.GetAllMenus)
 	mux.HandleFunc("GET /api/roles/{id}/menus", userHandler.GetRoleMenus)
 	mux.HandleFunc("PUT /api/roles/{id}/menus", userHandler.UpdateRoleMenus)
-	
+
 	// Role CRUD Extensions
 	mux.HandleFunc("POST /api/roles", userHandler.CreateRole)
 	mux.HandleFunc("PUT /api/roles/{id}", userHandler.UpdateRole)
@@ -183,7 +182,7 @@ func main() {
 	mux.HandleFunc("POST /api/categories", productHandler.CreateCategory)
 	mux.HandleFunc("PUT /api/categories/{id}", productHandler.UpdateCategory)
 	mux.HandleFunc("DELETE /api/categories/{id}", productHandler.DeleteCategory)
-	
+
 	// Extended Employee CRUD routes
 	mux.HandleFunc("GET /api/employees", userHandler.GetEmployees)
 	mux.HandleFunc("POST /api/employees", userHandler.CreateEmployee)
@@ -195,7 +194,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	
+
 	server := &http.Server{
 		Addr:    ":" + port,
 		Handler: middleware.LoggerAndRecovery(mux),
