@@ -42,6 +42,7 @@ func (h *BookingHandler) GetAllBookings(w http.ResponseWriter, r *http.Request) 
 	limitStr := r.URL.Query().Get("limit")
 	search := r.URL.Query().Get("search")
 	statusFilter := r.URL.Query().Get("status")
+	custIDStr := r.URL.Query().Get("customerId")
 
 	page := 1
 	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
@@ -53,7 +54,14 @@ func (h *BookingHandler) GetAllBookings(w http.ResponseWriter, r *http.Request) 
 		limit = l
 	}
 
-	bookings, total, err := h.service.GetAllBookings(r.Context(), search, statusFilter, page, limit)
+	var customerID int
+	if custIDStr != "" {
+		if cid, err := strconv.Atoi(custIDStr); err == nil {
+			customerID = cid
+		}
+	}
+
+	bookings, total, err := h.service.GetAllBookings(r.Context(), search, statusFilter, customerID, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

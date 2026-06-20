@@ -33,7 +33,7 @@ func (r *BookingRepository) Insert(ctx context.Context, b *domain.Booking) error
 }
 
 // FindAll retrieves bookings with joins to customers and vehicles with pagination and search
-func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFilter string, limit int, offset int) ([]*domain.Booking, int, error) {
+func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFilter string, customerID int, limit int, offset int) ([]*domain.Booking, int, error) {
 	// First, get the total count for pagination
 	countQuery := `
 		SELECT COUNT(*) 
@@ -44,6 +44,12 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 	`
 	var countArgs []interface{}
 	placeholderCount := 1
+
+	if customerID > 0 {
+		countQuery += fmt.Sprintf(" AND b.customer_id = $%d", placeholderCount)
+		countArgs = append(countArgs, customerID)
+		placeholderCount++
+	}
 
 	searchParam := "%" + search + "%"
 	countQuery += fmt.Sprintf(" AND (c.name ILIKE $%d OR c.phone ILIKE $%d OR v.license_plate ILIKE $%d)", placeholderCount, placeholderCount, placeholderCount)
@@ -77,6 +83,12 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 	`
 	var args []interface{}
 	placeholderCount = 1
+
+	if customerID > 0 {
+		query += fmt.Sprintf(" AND b.customer_id = $%d", placeholderCount)
+		args = append(args, customerID)
+		placeholderCount++
+	}
 
 	query += fmt.Sprintf(" AND (c.name ILIKE $%d OR c.phone ILIKE $%d OR v.license_plate ILIKE $%d)", placeholderCount, placeholderCount, placeholderCount)
 	args = append(args, searchParam)

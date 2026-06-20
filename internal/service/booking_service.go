@@ -46,7 +46,7 @@ func (s *BookingService) CreateBooking(ctx context.Context, req domain.BookingRe
 }
 
 // GetAllBookings retrieves bookings with details, pagination, and search
-func (s *BookingService) GetAllBookings(ctx context.Context, search string, statusFilter string, page int, limit int) ([]*domain.Booking, int, error) {
+func (s *BookingService) GetAllBookings(ctx context.Context, search string, statusFilter string, customerID int, page int, limit int) ([]*domain.Booking, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -54,7 +54,7 @@ func (s *BookingService) GetAllBookings(ctx context.Context, search string, stat
 		limit = 10
 	}
 	offset := (page - 1) * limit
-	return s.bookingRepo.FindAll(ctx, search, statusFilter, limit, offset)
+	return s.bookingRepo.FindAll(ctx, search, statusFilter, customerID, limit, offset)
 }
 
 // ConfirmBooking transitions booking status to CONFIRMED and spawns an active Work Order
