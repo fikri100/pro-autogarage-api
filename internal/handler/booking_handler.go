@@ -137,3 +137,23 @@ func (h *BookingHandler) CancelBooking(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (h *BookingHandler) GetBookedSlots(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		http.Error(w, "date query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	slots, err := h.service.GetBookedSlots(r.Context(), date)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if slots == nil {
+		slots = []string{}
+	}
+	json.NewEncoder(w).Encode(slots)
+}

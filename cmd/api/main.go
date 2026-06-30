@@ -44,6 +44,7 @@ func main() {
 	transactionRepo := repository.NewTransactionRepository(db)
 	cashflowRepo := repository.NewCashflowRepository(db)
 	dashboardRepo := repository.NewDashboardRepository(db)
+	paramRepo := repository.NewParamRepository(db)
 
 	// Initialize Services
 	customerService := service.NewCustomerService(customerRepo)
@@ -55,6 +56,7 @@ func main() {
 	transactionService := service.NewTransactionService(transactionRepo)
 	cashflowService := service.NewCashflowService(cashflowRepo)
 	dashboardService := service.NewDashboardService(dashboardRepo)
+	paramService := service.NewParamService(paramRepo)
 
 	// Initialize Portal & Security Middleware
 	portalAuthRateLimiter := middleware.NewIPRateLimiter(15, time.Minute)
@@ -72,6 +74,7 @@ func main() {
 	transactionHandler := handler.NewTransactionHandler(transactionService)
 	cashflowHandler := handler.NewCashflowHandler(cashflowService)
 	dashboardHandler := handler.NewDashboardHandler(dashboardService)
+	paramHandler := handler.NewParamHandler(paramService)
 	portalHandler := handler.NewPortalHandler(portalService)
 	exportHandler := handler.NewExportHandler(db)
 
@@ -84,6 +87,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status": "ok", "db_connected": true}`)
 	})
+	mux.HandleFunc("GET /api/params", paramHandler.GetParamsByGroup)
 
 	// Customer Routes
 	mux.HandleFunc("POST /api/customers", customerHandler.CreateCustomer)
@@ -110,6 +114,7 @@ func main() {
 	// Booking Routes
 	mux.HandleFunc("POST /api/bookings", bookingHandler.CreateBooking)
 	mux.HandleFunc("GET /api/bookings", bookingHandler.GetAllBookings)
+	mux.HandleFunc("GET /api/bookings/booked-slots", bookingHandler.GetBookedSlots)
 	mux.HandleFunc("PUT /api/bookings/{id}/confirm", bookingHandler.ConfirmBooking)
 	mux.HandleFunc("PUT /api/bookings/{id}/cancel", bookingHandler.CancelBooking)
 

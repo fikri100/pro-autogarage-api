@@ -190,3 +190,31 @@ func (r *BookingRepository) UpdateStatus(ctx context.Context, id int, status str
 	}
 	return nil
 }
+
+// GetBookedSlotsByDate retrieves all booked times for a specific date
+func (r *BookingRepository) GetBookedSlotsByDate(ctx context.Context, date string) ([]string, error) {
+	query := `
+		SELECT booking_time 
+		FROM bookings 
+		WHERE booking_date = $1 AND status = 'Y' AND operational_status != 'CANCELLED'
+	`
+	rows, err := r.db.QueryContext(ctx, query, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var slots []string
+	for rows.Next() {
+		var bTime string
+		if err := rows.Scan(&bTime); err != nil {
+			return nil, err
+		}
+		if len(bTime) >= 5 {
+			slots = append(slots, bTime[:5])
+		} else {
+			slots = append(slots, bTime)
+		}
+	}
+	return slots, nil
+}

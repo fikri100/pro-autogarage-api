@@ -223,6 +223,17 @@ func (s *PortalService) CreateBooking(ctx context.Context, customerID int, req d
 		}
 	}
 
+	// Check if date and time slot is already taken by another active booking
+	var count int
+	checkQuery := `SELECT COUNT(1) FROM bookings WHERE booking_date = $1 AND booking_time = $2 AND status = 'Y' AND operational_status != 'CANCELLED'`
+	err = tx.QueryRowContext(ctx, checkQuery, req.BookingDate, req.BookingTime).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, errors.New("jadwal tanggal dan jam ini sudah dipesan")
+	}
+
 	// 2. Insert booking record in PENDING state
 	insertBookingQuery := `
 		INSERT INTO bookings (customer_id, vehicle_id, booking_date, booking_time, complaints, operational_status, created_by, updated_by)

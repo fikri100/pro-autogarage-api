@@ -25,6 +25,17 @@ func (s *BookingService) CreateBooking(ctx context.Context, req domain.BookingRe
 		return nil, errors.New("customerId, vehicleId, bookingDate, and bookingTime are required")
 	}
 
+	// Check if date and time slot is already taken by another active booking
+	bookedSlots, err := s.bookingRepo.GetBookedSlotsByDate(ctx, req.BookingDate)
+	if err != nil {
+		return nil, err
+	}
+	for _, slot := range bookedSlots {
+		if slot == req.BookingTime || (len(req.BookingTime) >= 5 && slot == req.BookingTime[:5]) {
+			return nil, errors.New("jadwal tanggal dan jam ini sudah dipesan")
+		}
+	}
+
 	booking := &domain.Booking{
 		CustomerID:        req.CustomerID,
 		VehicleID:         req.VehicleID,
@@ -36,7 +47,7 @@ func (s *BookingService) CreateBooking(ctx context.Context, req domain.BookingRe
 		UpdatedBy:         &createdBy,
 	}
 
-	err := s.bookingRepo.Insert(ctx, booking)
+	err = s.bookingRepo.Insert(ctx, booking)
 	if err != nil {
 		return nil, err
 	}
@@ -100,4 +111,12 @@ func (s *BookingService) CancelBooking(ctx context.Context, id int, adminUser st
 	}
 
 	return s.bookingRepo.UpdateStatus(ctx, id, "CANCELLED", adminUser)
+}
+
+// GetBookedSlots retrieves all booked times for a specific date
+func (s *BookingService) GetBookedSlots(ctx context.Context, date string) ([]string, error) {
+	if date == "" {
+		return nil, errors.New("date is required")
+	}
+	return s.bookingRepo.GetBookedSlotsByDate(ctx, date)
 }
