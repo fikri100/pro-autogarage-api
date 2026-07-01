@@ -216,7 +216,12 @@ func (h *ProductHandler) GetStockLogs(w http.ResponseWriter, r *http.Request) {
 
 // GetCategories HTTP Handler
 func (h *ProductHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
-	categories, err := h.service.GetAllCategories(r.Context())
+	itemTypeIDStr := r.URL.Query().Get("item_type_id")
+	var itemTypeID int
+	if itemTypeIDStr != "" {
+		itemTypeID, _ = strconv.Atoi(itemTypeIDStr)
+	}
+	categories, err := h.service.GetAllCategories(r.Context(), itemTypeID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -232,14 +237,14 @@ func (h *ProductHandler) CreateCategory(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	id, err := h.service.CreateCategory(r.Context(), req.Name)
+	id, err := h.service.CreateCategory(r.Context(), req.Name, req.ItemTypeID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	fmt.Fprintf(w, `{"id": %d, "name": "%s"}`, id, req.Name)
+	fmt.Fprintf(w, `{"id": %d, "name": "%s", "itemTypeId": %d}`, id, req.Name, req.ItemTypeID)
 }
 
 // UpdateCategory HTTP Handler
@@ -255,7 +260,7 @@ func (h *ProductHandler) UpdateCategory(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = h.service.UpdateCategory(r.Context(), id, req.Name)
+	err = h.service.UpdateCategory(r.Context(), id, req.Name, req.ItemTypeID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

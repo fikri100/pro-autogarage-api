@@ -168,25 +168,25 @@ func (s *ProductService) GetStockLogs(ctx context.Context, prodID int) ([]*domai
 	return s.repo.FindStockLogsByProductID(ctx, prodID)
 }
 
-// GetAllCategories retrieves all active categories
-func (s *ProductService) GetAllCategories(ctx context.Context) ([]domain.Category, error) {
-	return s.repo.FindAllCategories(ctx)
+// GetAllCategories retrieves all active categories, optionally filtered by itemTypeID
+func (s *ProductService) GetAllCategories(ctx context.Context, itemTypeID int) ([]domain.Category, error) {
+	return s.repo.FindAllCategories(ctx, itemTypeID)
 }
 
-// CreateCategory creates a new category record
-func (s *ProductService) CreateCategory(ctx context.Context, name string) (int, error) {
+// CreateCategory creates a new category record with itemTypeId
+func (s *ProductService) CreateCategory(ctx context.Context, name string, itemTypeId int) (int, error) {
 	if name == "" {
 		return 0, errors.New("Nama kategori wajib diisi")
 	}
-	return s.repo.InsertCategory(ctx, name)
+	return s.repo.InsertCategory(ctx, name, itemTypeId)
 }
 
 // UpdateCategory updates an existing category
-func (s *ProductService) UpdateCategory(ctx context.Context, id int, name string) error {
+func (s *ProductService) UpdateCategory(ctx context.Context, id int, name string, itemTypeId int) error {
 	if name == "" {
 		return errors.New("Nama kategori wajib diisi")
 	}
-	return s.repo.UpdateCategory(ctx, id, name)
+	return s.repo.UpdateCategory(ctx, id, name, itemTypeId)
 }
 
 // DeleteCategory soft deletes a category

@@ -200,9 +200,12 @@ func main() {
 		port = "8080"
 	}
 
+	// Wrap mux with AuthMiddleware, then LoggerAndRecovery
+	handlerStack := middleware.LoggerAndRecovery(middleware.AuthMiddleware(mux))
+
 	server := &http.Server{
 		Addr:    ":" + port,
-		Handler: middleware.LoggerAndRecovery(mux),
+		Handler: handlerStack,
 	}
 
 	log.Printf("Starting Pro Auto Garage API on port %s", port)

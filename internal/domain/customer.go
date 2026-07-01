@@ -17,6 +17,7 @@ type Customer struct {
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedBy     *string   `json:"updatedBy"`
 	UpdatedAt     time.Time `json:"updatedAt"`
+	Token         string    `json:"token,omitempty"`
 }
 
 // CustomerRequest represents the payload from the client

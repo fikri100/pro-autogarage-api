@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 	"pro-autogarage-api/internal/domain"
 	"pro-autogarage-api/internal/repository"
+	"pro-autogarage-api/pkg/utils"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -121,6 +123,13 @@ func (s *UserService) Login(ctx context.Context, req domain.LoginRequest) (*doma
 		return nil, err
 	}
 	u.Menus = menus
+
+	// Generate JWT token (30 minutes)
+	token, err := utils.GenerateAdminToken(u.ID, u.Username, u.RoleID, u.RoleName, u.EmployeeID, 30*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	u.Token = token
 
 	return u, nil
 }

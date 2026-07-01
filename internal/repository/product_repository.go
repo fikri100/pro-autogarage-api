@@ -242,7 +242,7 @@ func (r *ProductRepository) RestockProductTx(ctx context.Context, req domain.Res
 	if req.RecordExpense {
 		totalExpense := float64(req.Quantity) * req.PurchasePrice
 		desc := fmt.Sprintf("Pembelian Restock: %s (%d pcs @ Rp %.0f) - Ref: %s", prodName, req.Quantity, req.PurchasePrice, req.ReferenceID)
-		
+
 		cashflowQuery := `
 			INSERT INTO cashflows (cashflow_type, amount, category, description, created_by, updated_by)
 			VALUES ('EXP', $1, 'STOCK', $2, $3, $4)
@@ -290,10 +290,22 @@ func (r *ProductRepository) FindStockLogsByProductID(ctx context.Context, prodID
 	return logs, nil
 }
 
-// FindAllCategories retrieves all active categories
-func (r *ProductRepository) FindAllCategories(ctx context.Context) ([]domain.Category, error) {
-	query := "SELECT id, name FROM categories WHERE status = 'Y' ORDER BY id ASC"
-	rows, err := r.db.QueryContext(ctx, query)
+// FindAllCategories retrieves all active categories, optionally filtered by itemTypeID
+func (r *ProductRepository) FindAllCategories(ctx context.Context, itemTypeID int) ([]domain.Category, error) {
+	query := `
+		SELECT c.id, c.name, c.item_type_id, COALESCE(p.nama_param, '') as item_type_name
+		FROM categories c
+		JOIN params p ON c.item_type_id = p.id
+		WHERE c.status = 'Y'
+	`
+	var args []interface{}
+	if itemTypeID != 0 {
+		query += " AND c.item_type_id = $1"
+		args = append(args, itemTypeID)
+	}
+	query += " ORDER BY c.id ASC"
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +314,7 @@ func (r *ProductRepository) FindAllCategories(ctx context.Context) ([]domain.Cat
 	list := []domain.Category{}
 	for rows.Next() {
 		var c domain.Category
-		if err := rows.Scan(&c.ID, &c.Name); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.ItemTypeID, &c.ItemTypeName); err != nil {
 			return nil, err
 		}
 		list = append(list, c)
@@ -310,26 +322,32 @@ func (r *ProductRepository) FindAllCategories(ctx context.Context) ([]domain.Cat
 	return list, nil
 }
 
-// InsertCategory inserts a new category record
-func (r *ProductRepository) InsertCategory(ctx context.Context, name string) (int, error) {
+// InsertCategory inserts a new category record with itemTypeId
+func (r *ProductRepository) InsertCategory(ctx context.Context, name string, itemTypeId int) (int, error) {
+	if itemTypeId == 0 {
+		itemTypeId = 3 // fallback to SPR
+	}
 	query := `
-		INSERT INTO categories (name, created_by, updated_by)
-		VALUES ($1, 'admin', 'admin')
+		INSERT INTO categories (name, item_type_id, created_by, updated_by)
+		VALUES ($1, $2, 'admin', 'admin')
 		RETURNING id
 	`
 	var id int
-	err := r.db.QueryRowContext(ctx, query, name).Scan(&id)
+	err := r.db.QueryRowContext(ctx, query, name, itemTypeId).Scan(&id)
 	return id, err
 }
 
-// UpdateCategory updates an existing category name
-func (r *ProductRepository) UpdateCategory(ctx context.Context, id int, name string) error {
+// UpdateCategory updates an existing category name and itemTypeId
+func (r *ProductRepository) UpdateCategory(ctx context.Context, id int, name string, itemTypeId int) error {
+	if itemTypeId == 0 {
+		itemTypeId = 3 // fallback to SPR
+	}
 	query := `
 		UPDATE categories 
-		SET name = $1, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $2 AND status = 'Y'
+		SET name = $1, item_type_id = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3 AND status = 'Y'
 	`
-	_, err := r.db.ExecContext(ctx, query, name, id)
+	_, err := r.db.ExecContext(ctx, query, name, itemTypeId, id)
 	return err
 }
 

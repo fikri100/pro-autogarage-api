@@ -101,6 +101,7 @@ type UserResponse struct {
 	EmployeeName string     `json:"employeeName"`
 	Status       string     `json:"status"`
 	Menus        []MenuItem `json:"menus"`
+	Token        string     `json:"token,omitempty"`
 }
 
 // RoleRequest represents role payload for CRUD operations

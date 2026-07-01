@@ -57,13 +57,16 @@ type StockLog struct {
 
 // Category represents a product/service category
 type Category struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	ItemTypeID   int    `json:"itemTypeId"`
+	ItemTypeName string `json:"itemTypeName"`
 }
 
 // CategoryRequest represents request payload to create/update a category
 type CategoryRequest struct {
-	Name string `json:"name"`
+	Name       string `json:"name"`
+	ItemTypeID int    `json:"itemTypeId"`
 }
 
 

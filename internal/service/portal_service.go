@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"pro-autogarage-api/internal/domain"
 	"pro-autogarage-api/internal/repository"
+	"pro-autogarage-api/pkg/utils"
 )
 
 type PortalService struct {
@@ -183,6 +184,13 @@ func (s *PortalService) Login(ctx context.Context, req domain.PortalLoginRequest
 	if err != nil {
 		return nil, errors.New("invalid username/phone or password")
 	}
+
+	// Generate JWT customer token (30 minutes)
+	token, err := utils.GenerateCustomerToken(c.ID, c.Phone, 30*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	c.Token = token
 
 	return &c, nil
 }
