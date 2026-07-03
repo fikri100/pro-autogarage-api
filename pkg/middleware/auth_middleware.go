@@ -20,7 +20,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			path == "/api/portal/send-otp" ||
 			path == "/api/portal/verify-otp" ||
 			path == "/api/portal/register" ||
-			path == "/api/portal/login" {
+			path == "/api/portal/login" ||
+			path == "/api/bookings/booked-slots" {
 			next.ServeHTTP(w, r)
 			return
 		}
