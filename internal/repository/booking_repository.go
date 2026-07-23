@@ -20,13 +20,17 @@ func NewBookingRepository(db *sql.DB) *BookingRepository {
 
 // Insert creates a new booking record
 func (r *BookingRepository) Insert(ctx context.Context, b *domain.Booking) error {
+	if b.OperationalStatusID == 0 {
+		_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'BOOKING_STATUS' AND (kode_param = $1 OR kode_param = 'PENDING') AND status = 'Y' LIMIT 1", b.OperationalStatus).Scan(&b.OperationalStatusID)
+	}
+
 	query := `
-		INSERT INTO bookings (customer_id, vehicle_id, booking_date, booking_time, complaints, operational_status, created_by, updated_by)
+		INSERT INTO bookings (customer_id, vehicle_id, booking_date, booking_time, complaints, operational_status_id, created_by, updated_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, status, created_at, updated_at
 	`
 	err := r.db.QueryRowContext(ctx, query,
-		b.CustomerID, b.VehicleID, b.BookingDate, b.BookingTime, b.Complaints, b.OperationalStatus, b.CreatedBy, b.UpdatedBy,
+		b.CustomerID, b.VehicleID, b.BookingDate, b.BookingTime, b.Complaints, b.OperationalStatusID, b.CreatedBy, b.UpdatedBy,
 	).Scan(&b.ID, &b.Status, &b.CreatedAt, &b.UpdatedAt)
 
 	return err
@@ -40,6 +44,7 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
+		LEFT JOIN params p ON b.operational_status_id = p.id
 		WHERE b.status = 'Y'
 	`
 	var countArgs []interface{}
@@ -57,7 +62,7 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 	placeholderCount++
 
 	if statusFilter != "" {
-		countQuery += fmt.Sprintf(" AND b.operational_status = $%d", placeholderCount)
+		countQuery += fmt.Sprintf(" AND (p.kode_param = $%d OR p.nama_param = $%d)", placeholderCount, placeholderCount)
 		countArgs = append(countArgs, statusFilter)
 		placeholderCount++
 	}
@@ -72,13 +77,14 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 	query := `
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
-			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
+			b.booking_date, b.booking_time, b.complaints, COALESCE(b.operational_status_id, 0), COALESCE(p.kode_param, ''), b.status,
 			b.created_by, b.created_at, b.updated_by, b.updated_at,
 			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
 		JOIN customers vc ON v.customer_id = vc.id
+		LEFT JOIN params p ON b.operational_status_id = p.id
 		WHERE b.status = 'Y'
 	`
 	var args []interface{}
@@ -95,13 +101,13 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 	placeholderCount++
 
 	if statusFilter != "" {
-		query += fmt.Sprintf(" AND b.operational_status = $%d", placeholderCount)
+		query += fmt.Sprintf(" AND (p.kode_param = $%d OR p.nama_param = $%d)", placeholderCount, placeholderCount)
 		args = append(args, statusFilter)
 		placeholderCount++
 	}
 	
 	// Dynamic priority order: PENDING first, then date DESC, time DESC
-	query += fmt.Sprintf(" ORDER BY CASE WHEN b.operational_status = 'PENDING' THEN 0 ELSE 1 END ASC, b.booking_date DESC, b.booking_time DESC LIMIT $%d OFFSET $%d", placeholderCount, placeholderCount+1)
+	query += fmt.Sprintf(" ORDER BY CASE WHEN p.kode_param = 'PENDING' THEN 0 ELSE 1 END ASC, b.booking_date DESC, b.booking_time DESC LIMIT $%d OFFSET $%d", placeholderCount, placeholderCount+1)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -118,7 +124,7 @@ func (r *BookingRepository) FindAll(ctx context.Context, search string, statusFi
 
 		if err := rows.Scan(
 			&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
-			&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
+			&bDate, &bTime, &b.Complaints, &b.OperationalStatusID, &b.OperationalStatus, &b.Status,
 			&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
 			&b.VehicleCustomerID, &b.VehicleOwnerName,
 		); err != nil {
@@ -138,13 +144,14 @@ func (r *BookingRepository) FindByID(ctx context.Context, id int) (*domain.Booki
 	query := `
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
-			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
+			b.booking_date, b.booking_time, b.complaints, COALESCE(b.operational_status_id, 0), COALESCE(p.kode_param, ''), b.status,
 			b.created_by, b.created_at, b.updated_by, b.updated_at,
 			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
 		JOIN customers vc ON v.customer_id = vc.id
+		LEFT JOIN params p ON b.operational_status_id = p.id
 		WHERE b.id = $1 AND b.status = 'Y'
 	`
 	var b domain.Booking
@@ -153,7 +160,7 @@ func (r *BookingRepository) FindByID(ctx context.Context, id int) (*domain.Booki
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
-		&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
+		&bDate, &bTime, &b.Complaints, &b.OperationalStatusID, &b.OperationalStatus, &b.Status,
 		&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
 		&b.VehicleCustomerID, &b.VehicleOwnerName,
 	)
@@ -171,12 +178,15 @@ func (r *BookingRepository) FindByID(ctx context.Context, id int) (*domain.Booki
 
 // UpdateStatus changes the operational status of a booking
 func (r *BookingRepository) UpdateStatus(ctx context.Context, id int, status string, updatedBy string) error {
+	var statusID int
+	_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'BOOKING_STATUS' AND (kode_param = $1 OR nama_param = $1 OR id::text = $1) AND status = 'Y' LIMIT 1", status).Scan(&statusID)
+
 	query := `
 		UPDATE bookings
-		SET operational_status = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
+		SET operational_status_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $3 AND status = 'Y'
 	`
-	res, err := r.db.ExecContext(ctx, query, status, updatedBy, id)
+	res, err := r.db.ExecContext(ctx, query, statusID, updatedBy, id)
 	if err != nil {
 		return err
 	}
@@ -194,9 +204,10 @@ func (r *BookingRepository) UpdateStatus(ctx context.Context, id int, status str
 // GetBookedSlotsByDate retrieves all booked times for a specific date
 func (r *BookingRepository) GetBookedSlotsByDate(ctx context.Context, date string) ([]string, error) {
 	query := `
-		SELECT booking_time 
-		FROM bookings 
-		WHERE booking_date = $1 AND status = 'Y' AND operational_status != 'CANCELLED'
+		SELECT b.booking_time 
+		FROM bookings b
+		LEFT JOIN params p ON b.operational_status_id = p.id
+		WHERE b.booking_date = $1 AND b.status = 'Y' AND COALESCE(p.kode_param, '') != 'CANCELLED'
 	`
 	rows, err := r.db.QueryContext(ctx, query, date)
 	if err != nil {

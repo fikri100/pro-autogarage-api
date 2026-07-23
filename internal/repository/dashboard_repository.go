@@ -28,7 +28,7 @@ func (r *DashboardRepository) GetStats(ctx context.Context) (domain.DashboardSta
 	}
 
 	// 2. Active Work Orders
-	woQuery := `SELECT COUNT(1) FROM work_orders WHERE status = 'Y' AND work_status IN ('IN_PROGRESS', 'COMPLETED')`
+	woQuery := `SELECT COUNT(1) FROM work_orders wo LEFT JOIN params p ON wo.work_status_id = p.id WHERE wo.status = 'Y' AND COALESCE(p.kode_param, '') IN ('IN_PROGRESS', 'COMPLETED')`
 	err = r.db.QueryRowContext(ctx, woQuery).Scan(&stats.ActiveWorkOrders)
 	if err != nil {
 		return stats, err
@@ -36,9 +36,10 @@ func (r *DashboardRepository) GetStats(ctx context.Context) (domain.DashboardSta
 
 	// 3. Today's Revenue
 	revQuery := `
-		SELECT COALESCE(SUM(total_amount), 0)
-		FROM transactions
-		WHERE status = 'Y' AND payment_status = 'PAID' AND transaction_date::date = CURRENT_DATE
+		SELECT COALESCE(SUM(t.total_amount), 0)
+		FROM transactions t
+		LEFT JOIN params p ON t.payment_status_id = p.id
+		WHERE t.status = 'Y' AND COALESCE(p.kode_param, '') = 'PAID' AND t.transaction_date::date = CURRENT_DATE
 	`
 	err = r.db.QueryRowContext(ctx, revQuery).Scan(&stats.TodayRevenue)
 	if err != nil {
@@ -46,7 +47,7 @@ func (r *DashboardRepository) GetStats(ctx context.Context) (domain.DashboardSta
 	}
 
 	// 4. Pending Bookings
-	bookQuery := `SELECT COUNT(1) FROM bookings WHERE status = 'Y' AND operational_status = 'PENDING'`
+	bookQuery := `SELECT COUNT(1) FROM bookings b LEFT JOIN params p ON b.operational_status_id = p.id WHERE b.status = 'Y' AND COALESCE(p.kode_param, '') = 'PENDING'`
 	err = r.db.QueryRowContext(ctx, bookQuery).Scan(&stats.PendingBookings)
 	if err != nil {
 		return stats, err
@@ -60,12 +61,13 @@ func (r *DashboardRepository) GetRecentBookings(ctx context.Context, limit int) 
 	query := `
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
-			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
+			b.booking_date, b.booking_time, b.complaints, COALESCE(b.operational_status_id, 0), COALESCE(p.kode_param, ''), b.status,
 			b.created_by, b.created_at, b.updated_by, b.updated_at
 		FROM bookings b
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
-		WHERE b.status = 'Y' AND b.operational_status = 'PENDING'
+		LEFT JOIN params p ON b.operational_status_id = p.id
+		WHERE b.status = 'Y' AND COALESCE(p.kode_param, '') = 'PENDING'
 		ORDER BY b.booking_date ASC, b.booking_time ASC
 		LIMIT $1
 	`
@@ -83,7 +85,7 @@ func (r *DashboardRepository) GetRecentBookings(ctx context.Context, limit int) 
 
 		err := rows.Scan(
 			&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
-			&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
+			&bDate, &bTime, &b.Complaints, &b.OperationalStatusID, &b.OperationalStatus, &b.Status,
 			&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
 		)
 		if err != nil {
@@ -108,12 +110,13 @@ func (r *DashboardRepository) GetActiveWorkOrders(ctx context.Context) ([]*domai
 		SELECT 
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
 			c.id, c.name, wo.mechanic_id, e.name, wo.start_time, wo.end_time,
-			wo.work_status, wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
+			COALESCE(wo.work_status_id, 0), COALESCE(p.kode_param, ''), wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
 		FROM work_orders wo
 		JOIN vehicles v ON wo.vehicle_id = v.id
 		JOIN customers c ON v.customer_id = c.id
 		LEFT JOIN employees e ON wo.mechanic_id = e.id
-		WHERE wo.status = 'Y' AND wo.work_status IN ('IN_PROGRESS', 'COMPLETED')
+		LEFT JOIN params p ON wo.work_status_id = p.id
+		WHERE wo.status = 'Y' AND COALESCE(p.kode_param, '') IN ('IN_PROGRESS', 'COMPLETED')
 		ORDER BY wo.id DESC
 	`
 	rows, err := r.db.QueryContext(ctx, query)
@@ -129,7 +132,7 @@ func (r *DashboardRepository) GetActiveWorkOrders(ctx context.Context) ([]*domai
 		err := rows.Scan(
 			&wo.ID, &wo.BookingID, &wo.VehicleID, &wo.LicensePlate, &wo.VehicleBrand, &wo.VehicleModel,
 			&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
-			&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
+			&wo.WorkStatusID, &wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err

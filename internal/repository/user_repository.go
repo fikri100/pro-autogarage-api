@@ -128,8 +128,9 @@ func (r *UserRepository) GetEmployees(ctx context.Context, search string, limit,
 	// First, get the total count for pagination
 	countQuery := `
 		SELECT COUNT(*) 
-		FROM employees 
-		WHERE status = 'Y' AND (name ILIKE $1 OR phone ILIKE $1 OR position ILIKE $1)
+		FROM employees e
+		LEFT JOIN params p ON e.position_id = p.id
+		WHERE e.status = 'Y' AND (e.name ILIKE $1 OR e.phone ILIKE $1 OR COALESCE(p.nama_param, '') ILIKE $1 OR COALESCE(p.kode_param, '') ILIKE $1)
 	`
 	var total int
 	searchParam := "%" + search + "%"
@@ -140,10 +141,11 @@ func (r *UserRepository) GetEmployees(ctx context.Context, search string, limit,
 
 	// Then, get the paginated data
 	query := `
-		SELECT id, name, phone, COALESCE(address, ''), position 
-		FROM employees 
-		WHERE status = 'Y' AND (name ILIKE $1 OR phone ILIKE $1 OR position ILIKE $1)
-		ORDER BY name ASC
+		SELECT e.id, e.name, e.phone, COALESCE(e.address, ''), COALESCE(e.position_id, 0), COALESCE(p.nama_param, '')
+		FROM employees e
+		LEFT JOIN params p ON e.position_id = p.id
+		WHERE e.status = 'Y' AND (e.name ILIKE $1 OR e.phone ILIKE $1 OR COALESCE(p.nama_param, '') ILIKE $1 OR COALESCE(p.kode_param, '') ILIKE $1)
+		ORDER BY e.name ASC
 		LIMIT $2 OFFSET $3
 	`
 	rows, err := r.db.QueryContext(ctx, query, searchParam, limit, offset)
@@ -155,7 +157,7 @@ func (r *UserRepository) GetEmployees(ctx context.Context, search string, limit,
 	var emps []*domain.Employee
 	for rows.Next() {
 		var e domain.Employee
-		if err := rows.Scan(&e.ID, &e.Name, &e.Phone, &e.Address, &e.Position); err != nil {
+		if err := rows.Scan(&e.ID, &e.Name, &e.Phone, &e.Address, &e.PositionID, &e.Position); err != nil {
 			return nil, 0, err
 		}
 		emps = append(emps, &e)
@@ -165,24 +167,34 @@ func (r *UserRepository) GetEmployees(ctx context.Context, search string, limit,
 
 // CreateEmployee creates a new employee and returns the generated ID
 func (r *UserRepository) CreateEmployee(ctx context.Context, e *domain.EmployeeRequest, createdBy string) (int, error) {
+	positionID := e.PositionID
+	if positionID == 0 && e.Position != "" {
+		_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'EMPLOYEE_POSITION' AND (kode_param = $1 OR nama_param = $1 OR id::text = $1) AND status = 'Y' LIMIT 1", e.Position).Scan(&positionID)
+	}
+
 	query := `
-		INSERT INTO employees (name, phone, address, position, status, created_by, updated_by)
-		VALUES ($1, $2, $3, $4, 'Y', $5, $5)
+		INSERT INTO employees (name, phone, address, position_id, status, created_by, updated_by)
+		VALUES ($1, $2, $3, NULLIF($4, 0), 'Y', $5, $5)
 		RETURNING id
 	`
 	var id int
-	err := r.db.QueryRowContext(ctx, query, e.Name, e.Phone, e.Address, e.Position, createdBy).Scan(&id)
+	err := r.db.QueryRowContext(ctx, query, e.Name, e.Phone, e.Address, positionID, createdBy).Scan(&id)
 	return id, err
 }
 
 // UpdateEmployee updates an existing employee's details
 func (r *UserRepository) UpdateEmployee(ctx context.Context, id int, e *domain.EmployeeRequest, updatedBy string) error {
+	positionID := e.PositionID
+	if positionID == 0 && e.Position != "" {
+		_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'EMPLOYEE_POSITION' AND (kode_param = $1 OR nama_param = $1 OR id::text = $1) AND status = 'Y' LIMIT 1", e.Position).Scan(&positionID)
+	}
+
 	query := `
 		UPDATE employees 
-		SET name = $1, phone = $2, address = $3, position = $4, updated_by = $5, updated_at = CURRENT_TIMESTAMP
+		SET name = $1, phone = $2, address = $3, position_id = NULLIF($4, 0), updated_by = $5, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $6 AND status = 'Y'
 	`
-	_, err := r.db.ExecContext(ctx, query, e.Name, e.Phone, e.Address, e.Position, updatedBy, id)
+	_, err := r.db.ExecContext(ctx, query, e.Name, e.Phone, e.Address, positionID, updatedBy, id)
 	return err
 }
 

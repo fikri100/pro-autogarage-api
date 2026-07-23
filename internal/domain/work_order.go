@@ -17,6 +17,7 @@ type WorkOrder struct {
 	EndTime             *time.Time `json:"endTime"`
 	EstimatedMinutes    *int       `json:"estimatedMinutes"`
 	EstimatedCompletion *time.Time `json:"estimatedCompletion"`
+	WorkStatusID        int        `json:"workStatusId"`
 	WorkStatus          string     `json:"workStatus"` // IN_PROGRESS, COMPLETED, PAID
 	Notes               *string    `json:"notes"`
 	Status              string     `json:"status"`

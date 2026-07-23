@@ -18,13 +18,17 @@ func NewProductRepository(db *sql.DB) *ProductRepository {
 
 // Insert creates a new product or service record
 func (r *ProductRepository) Insert(ctx context.Context, p *domain.Product) error {
+	if p.ItemTypeID == 0 && p.ItemType != "" {
+		_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'ITEM_TYPE' AND (kode_param = $1 OR nama_param = $1) AND status = 'Y' LIMIT 1", p.ItemType).Scan(&p.ItemTypeID)
+	}
+
 	query := `
-		INSERT INTO products (code, name, item_type, category, purchase_price, sale_price, stock_quantity, min_stock_limit, created_by, updated_by)
+		INSERT INTO products (code, name, item_type_id, category, purchase_price, sale_price, stock_quantity, min_stock_limit, created_by, updated_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, status, created_at, updated_at
 	`
 	err := r.db.QueryRowContext(ctx, query,
-		p.Code, p.Name, p.ItemType, p.Category, p.PurchasePrice, p.SalePrice, p.StockQuantity, p.MinStockLimit, p.CreatedBy, p.UpdatedBy,
+		p.Code, p.Name, p.ItemTypeID, p.Category, p.PurchasePrice, p.SalePrice, p.StockQuantity, p.MinStockLimit, p.CreatedBy, p.UpdatedBy,
 	).Scan(&p.ID, &p.Status, &p.CreatedAt, &p.UpdatedAt)
 
 	return err
@@ -34,27 +38,27 @@ func (r *ProductRepository) Insert(ctx context.Context, p *domain.Product) error
 func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType string, lowStock bool, limit int, offset int) ([]*domain.Product, int, error) {
 	// 1. Build the base conditions
 	var countArgs []interface{}
-	conditionQuery := "WHERE status = 'Y'"
+	conditionQuery := "WHERE p.status = 'Y'"
 	placeholderIdx := 1
 
 	if search != "" {
-		conditionQuery += fmt.Sprintf(" AND (code ILIKE $%d OR name ILIKE $%d OR category ILIKE $%d)", placeholderIdx, placeholderIdx, placeholderIdx)
+		conditionQuery += fmt.Sprintf(" AND (p.code ILIKE $%d OR p.name ILIKE $%d OR p.category ILIKE $%d)", placeholderIdx, placeholderIdx, placeholderIdx)
 		countArgs = append(countArgs, "%"+search+"%")
 		placeholderIdx++
 	}
 
 	if itemType != "" {
-		conditionQuery += fmt.Sprintf(" AND item_type = $%d", placeholderIdx)
+		conditionQuery += fmt.Sprintf(" AND (par.kode_param = $%d OR par.nama_param = $%d)", placeholderIdx, placeholderIdx)
 		countArgs = append(countArgs, itemType)
 		placeholderIdx++
 	}
 
 	if lowStock {
-		conditionQuery += " AND item_type = 'SPR' AND stock_quantity <= min_stock_limit"
+		conditionQuery += " AND par.kode_param = 'SPR' AND p.stock_quantity <= p.min_stock_limit"
 	}
 
 	// 2. Count total rows
-	countQueryStr := "SELECT COUNT(*) FROM products " + conditionQuery
+	countQueryStr := "SELECT COUNT(*) FROM products p LEFT JOIN params par ON p.item_type_id = par.id " + conditionQuery
 	var total int
 	err := r.db.QueryRowContext(ctx, countQueryStr, countArgs...).Scan(&total)
 	if err != nil {
@@ -63,9 +67,10 @@ func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType
 
 	// 3. Fetch paginated data
 	dataQueryStr := `
-		SELECT id, code, name, item_type, category, purchase_price, sale_price, stock_quantity, min_stock_limit, status, created_by, created_at, updated_by, updated_at
-		FROM products ` + conditionQuery + `
-		ORDER BY id DESC
+		SELECT p.id, p.code, p.name, COALESCE(p.item_type_id, 0), COALESCE(par.kode_param, ''), p.category, p.purchase_price, p.sale_price, p.stock_quantity, p.min_stock_limit, p.status, p.created_by, p.created_at, p.updated_by, p.updated_at
+		FROM products p
+		LEFT JOIN params par ON p.item_type_id = par.id ` + conditionQuery + `
+		ORDER BY p.id DESC
 		LIMIT $` + fmt.Sprint(placeholderIdx) + ` OFFSET $` + fmt.Sprint(placeholderIdx+1)
 
 	args := append(countArgs, limit, offset)
@@ -80,7 +85,7 @@ func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType
 	for rows.Next() {
 		var p domain.Product
 		if err := rows.Scan(
-			&p.ID, &p.Code, &p.Name, &p.ItemType, &p.Category,
+			&p.ID, &p.Code, &p.Name, &p.ItemTypeID, &p.ItemType, &p.Category,
 			&p.PurchasePrice, &p.SalePrice, &p.StockQuantity, &p.MinStockLimit,
 			&p.Status, &p.CreatedBy, &p.CreatedAt, &p.UpdatedBy, &p.UpdatedAt,
 		); err != nil {
@@ -94,13 +99,14 @@ func (r *ProductRepository) FindAll(ctx context.Context, search string, itemType
 // FindByID retrieves a product by ID
 func (r *ProductRepository) FindByID(ctx context.Context, id int) (*domain.Product, error) {
 	query := `
-		SELECT id, code, name, item_type, category, purchase_price, sale_price, stock_quantity, min_stock_limit, status, created_by, created_at, updated_by, updated_at
-		FROM products
-		WHERE id = $1 AND status = 'Y'
+		SELECT p.id, p.code, p.name, COALESCE(p.item_type_id, 0), COALESCE(par.kode_param, ''), p.category, p.purchase_price, p.sale_price, p.stock_quantity, p.min_stock_limit, p.status, p.created_by, p.created_at, p.updated_by, p.updated_at
+		FROM products p
+		LEFT JOIN params par ON p.item_type_id = par.id
+		WHERE p.id = $1 AND p.status = 'Y'
 	`
 	var p domain.Product
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&p.ID, &p.Code, &p.Name, &p.ItemType, &p.Category,
+		&p.ID, &p.Code, &p.Name, &p.ItemTypeID, &p.ItemType, &p.Category,
 		&p.PurchasePrice, &p.SalePrice, &p.StockQuantity, &p.MinStockLimit,
 		&p.Status, &p.CreatedBy, &p.CreatedAt, &p.UpdatedBy, &p.UpdatedAt,
 	)
@@ -129,13 +135,17 @@ func (r *ProductRepository) IsCodeExists(ctx context.Context, code string, exclu
 
 // Update modifies an existing product record
 func (r *ProductRepository) Update(ctx context.Context, p *domain.Product) error {
+	if p.ItemTypeID == 0 && p.ItemType != "" {
+		_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'ITEM_TYPE' AND (kode_param = $1 OR nama_param = $1) AND status = 'Y' LIMIT 1", p.ItemType).Scan(&p.ItemTypeID)
+	}
+
 	query := `
 		UPDATE products
-		SET code = $1, name = $2, item_type = $3, category = $4, purchase_price = $5, sale_price = $6, stock_quantity = $7, min_stock_limit = $8, updated_by = $9, updated_at = CURRENT_TIMESTAMP
+		SET code = $1, name = $2, item_type_id = $3, category = $4, purchase_price = $5, sale_price = $6, stock_quantity = $7, min_stock_limit = $8, updated_by = $9, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $10 AND status = 'Y'
 	`
 	res, err := r.db.ExecContext(ctx, query,
-		p.Code, p.Name, p.ItemType, p.Category, p.PurchasePrice, p.SalePrice, p.StockQuantity, p.MinStockLimit, p.UpdatedBy, p.ID,
+		p.Code, p.Name, p.ItemTypeID, p.Category, p.PurchasePrice, p.SalePrice, p.StockQuantity, p.MinStockLimit, p.UpdatedBy, p.ID,
 	)
 	if err != nil {
 		return err

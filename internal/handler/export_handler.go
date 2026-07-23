@@ -436,10 +436,11 @@ func (h *ExportHandler) ExportProductsCSV(w http.ResponseWriter, r *http.Request
 
 func (h *ExportHandler) ExportEmployeesCSV(w http.ResponseWriter, r *http.Request) {
 	query := `
-		SELECT id, name, position, phone, COALESCE(address, '')
-		FROM employees
-		WHERE status = 'Y'
-		ORDER BY name ASC
+		SELECT e.id, e.name, COALESCE(p.nama_param, ''), e.phone, COALESCE(e.address, '')
+		FROM employees e
+		LEFT JOIN params p ON e.position_id = p.id
+		WHERE e.status = 'Y'
+		ORDER BY e.name ASC
 	`
 	rows, err := h.db.QueryContext(r.Context(), query)
 	if err != nil {

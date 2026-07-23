@@ -7,6 +7,7 @@ type Product struct {
 	ID            int       `json:"id"`
 	Code          string    `json:"code"`
 	Name          string    `json:"name"`
+	ItemTypeID    int       `json:"itemTypeId"`
 	ItemType      string    `json:"itemType"` // 'SPR' (Sparepart) or 'SRV' (Service/Jasa)
 	Category      *string   `json:"category"` // nullable
 	PurchasePrice float64   `json:"purchasePrice"`
@@ -24,6 +25,7 @@ type Product struct {
 type ProductRequest struct {
 	Code          string   `json:"code"`
 	Name          string   `json:"name"`
+	ItemTypeID    int      `json:"itemTypeId"`
 	ItemType      string   `json:"itemType"`
 	Category      *string  `json:"category"`
 	PurchasePrice *float64 `json:"purchasePrice"`

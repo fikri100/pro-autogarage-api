@@ -9,7 +9,9 @@ type Transaction struct {
 	TotalAmount     float64              `json:"totalAmount"`
 	Discount        float64              `json:"discount"` // we can add discount field
 	Tax             float64              `json:"tax"`      // we can add tax field (PPN 11%)
+	PaymentMethodID *int                 `json:"paymentMethodId"`
 	PaymentMethod   *string              `json:"paymentMethod"`
+	PaymentStatusID int                  `json:"paymentStatusId"`
 	PaymentStatus   string               `json:"paymentStatus"` // UNPAID, PAID
 	TransactionDate time.Time            `json:"transactionDate"`
 	Status          string               `json:"status"`
@@ -44,7 +46,8 @@ type TransactionDetailRequest struct {
 }
 
 type PaymentRequest struct {
-	PaymentMethod string                      `json:"paymentMethod"`
-	Discount      float64                     `json:"discount"`
-	Details       []*TransactionDetailRequest `json:"details"`
+	PaymentMethodID int                         `json:"paymentMethodId"`
+	PaymentMethod   string                      `json:"paymentMethod"`
+	Discount        float64                     `json:"discount"`
+	Details         []*TransactionDetailRequest `json:"details"`
 }

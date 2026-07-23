@@ -18,13 +18,17 @@ func NewWorkOrderRepository(db *sql.DB) *WorkOrderRepository {
 
 // Insert creates a new work order
 func (r *WorkOrderRepository) Insert(ctx context.Context, wo *domain.WorkOrder) error {
+	if wo.WorkStatusID == 0 {
+		_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'WORK_ORDER_STATUS' AND (kode_param = $1 OR kode_param = 'IN_PROGRESS') AND status = 'Y' LIMIT 1", wo.WorkStatus).Scan(&wo.WorkStatusID)
+	}
+
 	query := `
-		INSERT INTO work_orders (booking_id, vehicle_id, mechanic_id, work_status, notes, created_by, updated_by)
+		INSERT INTO work_orders (booking_id, vehicle_id, mechanic_id, work_status_id, notes, created_by, updated_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, status, start_time, created_at, updated_at
 	`
 	err := r.db.QueryRowContext(ctx, query,
-		wo.BookingID, wo.VehicleID, wo.MechanicID, wo.WorkStatus, wo.Notes, wo.CreatedBy, wo.UpdatedBy,
+		wo.BookingID, wo.VehicleID, wo.MechanicID, wo.WorkStatusID, wo.Notes, wo.CreatedBy, wo.UpdatedBy,
 	).Scan(&wo.ID, &wo.Status, &wo.StartTime, &wo.CreatedAt, &wo.UpdatedAt)
 
 	return err
@@ -39,7 +43,8 @@ func (r *WorkOrderRepository) FindAllActive(ctx context.Context, search string, 
 		JOIN vehicles v ON wo.vehicle_id = v.id
 		JOIN customers c ON v.customer_id = c.id
 		LEFT JOIN employees e ON wo.mechanic_id = e.id
-		WHERE wo.status = 'Y' AND wo.work_status <> 'PAID'
+		LEFT JOIN params par ON wo.work_status_id = par.id
+		WHERE wo.status = 'Y' AND (par.kode_param <> 'PAID' OR wo.work_status_id IS NULL)
 	`
 	var countArgs []interface{}
 	placeholderCount := 1
@@ -61,12 +66,13 @@ func (r *WorkOrderRepository) FindAllActive(ctx context.Context, search string, 
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
 			c.id, c.name, wo.mechanic_id, e.name, wo.start_time, wo.end_time,
 			wo.estimated_minutes, wo.estimated_completion,
-			wo.work_status, wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
+			COALESCE(wo.work_status_id, 0), COALESCE(par.kode_param, ''), wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
 		FROM work_orders wo
 		JOIN vehicles v ON wo.vehicle_id = v.id
 		JOIN customers c ON v.customer_id = c.id
 		LEFT JOIN employees e ON wo.mechanic_id = e.id
-		WHERE wo.status = 'Y' AND wo.work_status <> 'PAID'
+		LEFT JOIN params par ON wo.work_status_id = par.id
+		WHERE wo.status = 'Y' AND (par.kode_param <> 'PAID' OR wo.work_status_id IS NULL)
 	`
 	var args []interface{}
 	placeholderCount = 1
@@ -94,7 +100,7 @@ func (r *WorkOrderRepository) FindAllActive(ctx context.Context, search string, 
 			&wo.ID, &wo.BookingID, &wo.VehicleID, &wo.LicensePlate, &wo.VehicleBrand, &wo.VehicleModel,
 			&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
 			&estimatedMinutes, &estimatedCompletion,
-			&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
+			&wo.WorkStatusID, &wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -121,11 +127,12 @@ func (r *WorkOrderRepository) FindByID(ctx context.Context, id int) (*domain.Wor
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
 			c.id, c.name, wo.mechanic_id, e.name, wo.start_time, wo.end_time,
 			wo.estimated_minutes, wo.estimated_completion,
-			wo.work_status, wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
+			COALESCE(wo.work_status_id, 0), COALESCE(par.kode_param, ''), wo.notes, wo.status, wo.created_by, wo.created_at, wo.updated_by, wo.updated_at
 		FROM work_orders wo
 		JOIN vehicles v ON wo.vehicle_id = v.id
 		JOIN customers c ON v.customer_id = c.id
 		LEFT JOIN employees e ON wo.mechanic_id = e.id
+		LEFT JOIN params par ON wo.work_status_id = par.id
 		WHERE wo.id = $1 AND wo.status = 'Y'
 	`
 	var wo domain.WorkOrder
@@ -136,7 +143,7 @@ func (r *WorkOrderRepository) FindByID(ctx context.Context, id int) (*domain.Wor
 		&wo.ID, &wo.BookingID, &wo.VehicleID, &wo.LicensePlate, &wo.VehicleBrand, &wo.VehicleModel,
 		&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
 		&estimatedMinutes, &estimatedCompletion,
-		&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
+		&wo.WorkStatusID, &wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt, &wo.UpdatedBy, &wo.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -160,12 +167,15 @@ func (r *WorkOrderRepository) FindByID(ctx context.Context, id int) (*domain.Wor
 
 // UpdateStatus changes work_status of a work order
 func (r *WorkOrderRepository) UpdateStatus(ctx context.Context, id int, status string, updatedBy string) error {
+	var statusID int
+	_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'WORK_ORDER_STATUS' AND (kode_param = $1 OR nama_param = $1 OR id::text = $1) AND status = 'Y' LIMIT 1", status).Scan(&statusID)
+
 	query := `
 		UPDATE work_orders
-		SET work_status = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
+		SET work_status_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $3 AND status = 'Y'
 	`
-	res, err := r.db.ExecContext(ctx, query, status, updatedBy, id)
+	res, err := r.db.ExecContext(ctx, query, statusID, updatedBy, id)
 	if err != nil {
 		return err
 	}
@@ -182,12 +192,15 @@ func (r *WorkOrderRepository) UpdateStatus(ctx context.Context, id int, status s
 
 // AssignMechanic updates mechanic and optionally notes on a work order
 func (r *WorkOrderRepository) AssignMechanic(ctx context.Context, id int, mechanicID *int, notes *string, status string, updatedBy string) error {
+	var statusID int
+	_ = r.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'WORK_ORDER_STATUS' AND (kode_param = $1 OR nama_param = $1 OR id::text = $1) AND status = 'Y' LIMIT 1", status).Scan(&statusID)
+
 	query := `
 		UPDATE work_orders
-		SET mechanic_id = $1, notes = $2, work_status = $3, updated_by = $4, updated_at = CURRENT_TIMESTAMP
+		SET mechanic_id = $1, notes = $2, work_status_id = $3, updated_by = $4, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $5 AND status = 'Y'
 	`
-	res, err := r.db.ExecContext(ctx, query, mechanicID, notes, status, updatedBy, id)
+	res, err := r.db.ExecContext(ctx, query, mechanicID, notes, statusID, updatedBy, id)
 	if err != nil {
 		return err
 	}

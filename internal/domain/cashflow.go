@@ -4,24 +4,26 @@ import "time"
 
 // Cashflow represents the cashflows database table
 type Cashflow struct {
-	ID            int        `json:"id"`
-	CashflowType  string     `json:"cashflowType"` // 'INC' or 'EXP'
-	Amount        float64    `json:"amount"`
-	Category      string     `json:"category"` // 'SERVICE', 'ELECTRICITY', 'SALARY', 'STOCK', 'OTHER'
-	Description   *string    `json:"description"`
-	TransactionID *int       `json:"transactionId"` // Nullable
-	FlowDate      time.Time  `json:"flowDate"`
-	Status        string     `json:"status"`
-	CreatedBy     *string    `json:"createdBy"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedBy     *string    `json:"updatedBy"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	ID             int        `json:"id"`
+	CashflowTypeID int        `json:"cashflowTypeId"`
+	CashflowType   string     `json:"cashflowType"` // 'INC' or 'EXP'
+	Amount         float64    `json:"amount"`
+	Category       string     `json:"category"` // 'SERVICE', 'ELECTRICITY', 'SALARY', 'STOCK', 'OTHER'
+	Description    *string    `json:"description"`
+	TransactionID  *int       `json:"transactionId"` // Nullable
+	FlowDate       time.Time  `json:"flowDate"`
+	Status         string     `json:"status"`
+	CreatedBy      *string    `json:"createdBy"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedBy      *string    `json:"updatedBy"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 // CashflowRequest represents the payload to create a cashflow entry manually
 type CashflowRequest struct {
-	CashflowType string  `json:"cashflowType"` // 'INC' or 'EXP'
-	Amount       float64 `json:"amount"`
+	CashflowTypeID int     `json:"cashflowTypeId"`
+	CashflowType   string  `json:"cashflowType"` // 'INC' or 'EXP'
+	Amount         float64 `json:"amount"`
 	Category     string  `json:"category"`
 	Description  string  `json:"description"`
 	FlowDate     string  `json:"flowDate"` // Format YYYY-MM-DD

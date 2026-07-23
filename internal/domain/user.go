@@ -34,19 +34,21 @@ type Role struct {
 
 // Employee represents a staff member
 type Employee struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Phone    string `json:"phone"`
-	Address  string `json:"address"`
-	Position string `json:"position"`
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Address    string `json:"address"`
+	PositionID int    `json:"positionId"`
+	Position   string `json:"position"`
 }
 
 // EmployeeRequest represents request payload to create/update an employee
 type EmployeeRequest struct {
-	Name     string `json:"name"`
-	Phone    string `json:"phone"`
-	Address  string `json:"address"`
-	Position string `json:"position"`
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Address    string `json:"address"`
+	PositionID int    `json:"positionId"`
+	Position   string `json:"position"`
 }
 
 

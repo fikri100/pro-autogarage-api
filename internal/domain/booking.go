@@ -14,6 +14,7 @@ type Booking struct {
 	BookingDate         string     `json:"bookingDate"` // format: YYYY-MM-DD
 	BookingTime         string     `json:"bookingTime"` // format: HH:MM
 	Complaints          *string    `json:"complaints"`
+	OperationalStatusID int        `json:"operationalStatusId"`
 	OperationalStatus   string     `json:"operationalStatus"` // PENDING, CONFIRMED, CANCELLED
 	Status              string     `json:"status"`
 	CreatedBy           *string    `json:"createdBy"`

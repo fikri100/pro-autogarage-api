@@ -47,7 +47,7 @@ func main() {
 	paramRepo := repository.NewParamRepository(db)
 
 	// Initialize Services
-	customerService := service.NewCustomerService(customerRepo)
+	customerService := service.NewCustomerService(customerRepo, vehicleRepo)
 	vehicleService := service.NewVehicleService(vehicleRepo)
 	userService := service.NewUserService(userRepo)
 	productService := service.NewProductService(productRepo)

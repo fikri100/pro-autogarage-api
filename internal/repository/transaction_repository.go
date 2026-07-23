@@ -72,13 +72,22 @@ func (r *TransactionRepository) CreateUnpaidTransaction(ctx context.Context, woI
 		}
 		invoiceNumber = prefix + fmt.Sprintf("%04d", count+1)
 
+		var unpaidStatusID int
+		_ = tx.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'PAYMENT_STATUS' AND kode_param = 'UNPAID' LIMIT 1").Scan(&unpaidStatusID)
+		if unpaidStatusID == 0 {
+			err = tx.QueryRowContext(ctx, "INSERT INTO params (group_param, kode_param, nama_param, created_by) VALUES ('PAYMENT_STATUS', 'UNPAID', 'Belum Dibayar', 'system') RETURNING id").Scan(&unpaidStatusID)
+			if err != nil {
+				return fmt.Errorf("failed to resolve UNPAID payment status param: %w", err)
+			}
+		}
+
 		// Insert unpaid transaction
 		insertQuery := `
-			INSERT INTO transactions (work_order_id, invoice_number, total_amount, payment_status, created_by, updated_by)
-			VALUES ($1, $2, 0, 'UNPAID', $3, $4)
+			INSERT INTO transactions (work_order_id, invoice_number, total_amount, payment_status_id, created_by, updated_by)
+			VALUES ($1, $2, 0, $3, $4, $5)
 			RETURNING id
 		`
-		err = tx.QueryRowContext(ctx, insertQuery, woID, invoiceNumber, createdBy, createdBy).Scan(&transID)
+		err = tx.QueryRowContext(ctx, insertQuery, woID, invoiceNumber, unpaidStatusID, createdBy, createdBy).Scan(&transID)
 		if err != nil {
 			return err
 		}
@@ -122,14 +131,15 @@ func (r *TransactionRepository) CreateUnpaidTransaction(ctx context.Context, woI
 // GetTransactionByWO gets transaction and items by WO ID
 func (r *TransactionRepository) GetTransactionByWO(ctx context.Context, woID int) (*domain.Transaction, []*domain.TransactionDetail, error) {
 	query := `
-		SELECT id, work_order_id, invoice_number, total_amount, payment_status, transaction_date, created_by, created_at
-		FROM transactions
-		WHERE work_order_id = $1 AND status = 'Y'
+		SELECT t.id, t.work_order_id, t.invoice_number, t.total_amount, COALESCE(t.payment_status_id, 0), COALESCE(par.kode_param, ''), t.transaction_date, t.created_by, t.created_at
+		FROM transactions t
+		LEFT JOIN params par ON t.payment_status_id = par.id
+		WHERE t.work_order_id = $1 AND t.status = 'Y'
 	`
 	var t domain.Transaction
 	var payMethod sql.NullString
 	err := r.db.QueryRowContext(ctx, query, woID).Scan(
-		&t.ID, &t.WorkOrderID, &t.InvoiceNumber, &t.TotalAmount, &t.PaymentStatus, &t.TransactionDate, &t.CreatedBy, &t.CreatedAt,
+		&t.ID, &t.WorkOrderID, &t.InvoiceNumber, &t.TotalAmount, &t.PaymentStatusID, &t.PaymentStatus, &t.TransactionDate, &t.CreatedBy, &t.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -145,10 +155,11 @@ func (r *TransactionRepository) GetTransactionByWO(ctx context.Context, woID int
 	// Fetch details
 	detailsQuery := `
 		SELECT 
-			td.id, td.transaction_id, td.product_id, p.code, p.name, p.item_type, p.category, p.purchase_price,
+			td.id, td.transaction_id, td.product_id, p.code, p.name, COALESCE(par.kode_param, ''), p.category, p.purchase_price,
 			td.quantity, td.price_at_transaction, td.subtotal, td.created_by, td.created_at
 		FROM transaction_details td
 		JOIN products p ON td.product_id = p.id
+		LEFT JOIN params par ON p.item_type_id = par.id
 		WHERE td.transaction_id = $1 AND td.status = 'Y'
 	`
 	rows, err := r.db.QueryContext(ctx, detailsQuery, t.ID)
@@ -181,9 +192,10 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context, sear
 		JOIN vehicles v ON wo.vehicle_id = v.id
 		JOIN customers c ON v.customer_id = c.id
 		LEFT JOIN employees e ON wo.mechanic_id = e.id
-		WHERE wo.status = 'Y' AND wo.work_status = 'COMPLETED'
+		LEFT JOIN params par_wo ON wo.work_status_id = par_wo.id
+		WHERE wo.status = 'Y' AND (par_wo.kode_param = 'COMPLETED' OR wo.work_status_id IS NULL)
 		AND wo.id NOT IN (
-			SELECT work_order_id FROM transactions WHERE payment_status = 'PAID' AND status = 'Y'
+			SELECT work_order_id FROM transactions t LEFT JOIN params par ON t.payment_status_id = par.id WHERE COALESCE(par.kode_param, '') = 'PAID' AND t.status = 'Y'
 		)
 	`
 	var countArgs []interface{}
@@ -205,14 +217,15 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context, sear
 		SELECT 
 			wo.id, wo.booking_id, wo.vehicle_id, v.license_plate, v.brand, v.model,
 			c.id, c.name, wo.mechanic_id, e.name, wo.start_time, wo.end_time,
-			wo.work_status, wo.notes, wo.status, wo.created_by, wo.created_at
+			COALESCE(wo.work_status_id, 0), COALESCE(par_wo.kode_param, ''), wo.notes, wo.status, wo.created_by, wo.created_at
 		FROM work_orders wo
 		JOIN vehicles v ON wo.vehicle_id = v.id
 		JOIN customers c ON v.customer_id = c.id
 		LEFT JOIN employees e ON wo.mechanic_id = e.id
-		WHERE wo.status = 'Y' AND wo.work_status = 'COMPLETED'
+		LEFT JOIN params par_wo ON wo.work_status_id = par_wo.id
+		WHERE wo.status = 'Y' AND (par_wo.kode_param = 'COMPLETED' OR wo.work_status_id IS NULL)
 		AND wo.id NOT IN (
-			SELECT work_order_id FROM transactions WHERE payment_status = 'PAID' AND status = 'Y'
+			SELECT work_order_id FROM transactions t LEFT JOIN params par ON t.payment_status_id = par.id WHERE COALESCE(par.kode_param, '') = 'PAID' AND t.status = 'Y'
 		)
 	`
 	var args []interface{}
@@ -238,7 +251,7 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context, sear
 		if err := rows.Scan(
 			&wo.ID, &wo.BookingID, &wo.VehicleID, &wo.LicensePlate, &wo.VehicleBrand, &wo.VehicleModel,
 			&wo.CustomerID, &wo.CustomerName, &wo.MechanicID, &mechName, &wo.StartTime, &wo.EndTime,
-			&wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt,
+			&wo.WorkStatusID, &wo.WorkStatus, &wo.Notes, &wo.Status, &wo.CreatedBy, &wo.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -252,7 +265,7 @@ func (r *TransactionRepository) FindAllReadyForCashier(ctx context.Context, sear
 }
 
 // FinalizePaymentTx performs the cashier finalized checkout in an atomic database transaction
-func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID int, paymentMethod string, discount float64, tax float64, total float64, details []*domain.TransactionDetail, createdBy string) error {
+func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID int, paymentMethodID int, paymentMethod string, discount float64, tax float64, total float64, details []*domain.TransactionDetail, createdBy string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -262,7 +275,7 @@ func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID i
 	// 1. Get Work Order ID and Invoice Number
 	var woID int
 	var invoiceNumber string
-	selectTransQuery := `SELECT work_order_id, invoice_number FROM transactions WHERE id = $1 AND payment_status = 'UNPAID'`
+	selectTransQuery := `SELECT t.work_order_id, t.invoice_number FROM transactions t LEFT JOIN params par ON t.payment_status_id = par.id WHERE t.id = $1 AND (COALESCE(par.kode_param, '') = 'UNPAID' OR t.payment_status_id IS NULL)`
 	err = tx.QueryRowContext(ctx, selectTransQuery, transID).Scan(&woID, &invoiceNumber)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -296,7 +309,7 @@ func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID i
 		var itemType string
 		var currentStock int
 		var code string
-		selectProdQuery := `SELECT item_type, stock_quantity, code FROM products WHERE id = $1 AND status = 'Y' FOR UPDATE`
+		selectProdQuery := `SELECT COALESCE(par.kode_param, ''), p.stock_quantity, p.code FROM products p LEFT JOIN params par ON p.item_type_id = par.id WHERE p.id = $1 AND p.status = 'Y' FOR UPDATE OF p`
 		err = tx.QueryRowContext(ctx, selectProdQuery, d.ProductID).Scan(&itemType, &currentStock, &code)
 		if err != nil {
 			return err
@@ -327,24 +340,38 @@ func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID i
 		}
 	}
 
-	// 5. Update transaction columns: paid status, discount, tax, total, method, and timestamps
+	var paidStatusID int
+	_ = tx.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'PAYMENT_STATUS' AND kode_param = 'PAID' LIMIT 1").Scan(&paidStatusID)
+
+	var incCashflowID int
+	_ = tx.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'CASHFLOW_TYPE' AND kode_param = 'INC' LIMIT 1").Scan(&incCashflowID)
+
+	var paidWOStatusID int
+	_ = tx.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'WORK_ORDER_STATUS' AND kode_param = 'PAID' LIMIT 1").Scan(&paidWOStatusID)
+
+	pmID := paymentMethodID
+	if pmID == 0 && paymentMethod != "" {
+		_ = tx.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'PAYMENT_METHOD' AND (kode_param = $1 OR nama_param = $1 OR id::text = $1) AND status = 'Y' LIMIT 1", paymentMethod).Scan(&pmID)
+	}
+
+	// 5. Update transaction columns: paid status, discount, tax, total, method_id, and timestamps
 	updateTransQuery := `
 		UPDATE transactions
-		SET payment_status = 'PAID', payment_method = $1, total_amount = $2, transaction_date = CURRENT_TIMESTAMP, updated_by = $3, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $4
+		SET payment_status_id = $1, payment_method_id = NULLIF($2, 0), total_amount = $3, transaction_date = CURRENT_TIMESTAMP, updated_by = $4, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $5
 	`
-	_, err = tx.ExecContext(ctx, updateTransQuery, paymentMethod, total, createdBy, transID)
+	_, err = tx.ExecContext(ctx, updateTransQuery, paidStatusID, pmID, total, createdBy, transID)
 	if err != nil {
 		return err
 	}
 
 	// 6. Record revenue to cashflows
 	insertCashQuery := `
-		INSERT INTO cashflows (cashflow_type, amount, category, description, transaction_id, created_by, updated_by)
-		VALUES ('INC', $1, 'SERVICE', $2, $3, $4, $5)
+		INSERT INTO cashflows (cashflow_type_id, amount, category, description, transaction_id, created_by, updated_by)
+		VALUES ($1, $2, 'SERVICE', $3, $4, $5, $6)
 	`
 	desc := "Pendapatan servis kendaraan dari Invoice " + invoiceNumber
-	_, err = tx.ExecContext(ctx, insertCashQuery, total, desc, transID, createdBy, createdBy)
+	_, err = tx.ExecContext(ctx, insertCashQuery, incCashflowID, total, desc, transID, createdBy, createdBy)
 	if err != nil {
 		return err
 	}
@@ -352,10 +379,10 @@ func (r *TransactionRepository) FinalizePaymentTx(ctx context.Context, transID i
 	// 7. Finalize Work Order status to PAID
 	updateWOQuery := `
 		UPDATE work_orders
-		SET work_status = 'PAID', end_time = CURRENT_TIMESTAMP, updated_by = $1, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $2
+		SET work_status_id = $1, end_time = CURRENT_TIMESTAMP, updated_by = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3
 	`
-	_, err = tx.ExecContext(ctx, updateWOQuery, createdBy, woID)
+	_, err = tx.ExecContext(ctx, updateWOQuery, paidWOStatusID, createdBy, woID)
 	if err != nil {
 		return err
 	}

@@ -172,7 +172,7 @@ func (s *UserService) DeleteRole(ctx context.Context, id int) error {
 
 // CreateEmployee creates a new employee record
 func (s *UserService) CreateEmployee(ctx context.Context, req domain.EmployeeRequest, adminUser string) (int, error) {
-	if req.Name == "" || req.Phone == "" || req.Position == "" {
+	if req.Name == "" || req.Phone == "" || (req.PositionID == 0 && req.Position == "") {
 		return 0, errors.New("Nama, Nomor Telepon, dan Jabatan wajib diisi")
 	}
 	return s.repo.CreateEmployee(ctx, &req, adminUser)
@@ -180,7 +180,7 @@ func (s *UserService) CreateEmployee(ctx context.Context, req domain.EmployeeReq
 
 // UpdateEmployee updates an existing employee record
 func (s *UserService) UpdateEmployee(ctx context.Context, id int, req domain.EmployeeRequest, adminUser string) error {
-	if req.Name == "" || req.Phone == "" || req.Position == "" {
+	if req.Name == "" || req.Phone == "" || (req.PositionID == 0 && req.Position == "") {
 		return errors.New("Nama, Nomor Telepon, dan Jabatan wajib diisi")
 	}
 	return s.repo.UpdateEmployee(ctx, id, &req, adminUser)

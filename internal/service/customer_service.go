@@ -3,16 +3,21 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"pro-autogarage-api/internal/domain"
 	"pro-autogarage-api/internal/repository"
 )
 
 type CustomerService struct {
-	repo *repository.CustomerRepository
+	repo        *repository.CustomerRepository
+	vehicleRepo *repository.VehicleRepository
 }
 
-func NewCustomerService(repo *repository.CustomerRepository) *CustomerService {
-	return &CustomerService{repo: repo}
+func NewCustomerService(repo *repository.CustomerRepository, vehicleRepo *repository.VehicleRepository) *CustomerService {
+	return &CustomerService{
+		repo:        repo,
+		vehicleRepo: vehicleRepo,
+	}
 }
 
 // CreateCustomer validates and delegates creation to repository
@@ -37,6 +42,34 @@ func (s *CustomerService) CreateCustomer(ctx context.Context, req domain.Custome
 	if err != nil {
 		return nil, err
 	}
+
+	// Insert initial vehicle if provided
+	plate := req.LicensePlate
+	if plate == "" {
+		plate = req.Plate
+	}
+	year := req.YearMade
+	if year == 0 {
+		year = req.Year
+	}
+
+	if plate != "" && s.vehicleRepo != nil {
+		vehicleReq := &domain.VehicleRequest{
+			CustomerID:   customer.ID,
+			LicensePlate: plate,
+			Brand:        req.Brand,
+			Model:        req.Model,
+			YearMade:     year,
+			Transmission: req.Transmission,
+		}
+		vID, vErr := s.vehicleRepo.Insert(ctx, vehicleReq)
+		if vErr != nil {
+			log.Printf("[ERROR] Failed to insert initial vehicle for customer %d (plate=%s): %v", customer.ID, plate, vErr)
+		} else {
+			log.Printf("[SUCCESS] Inserted initial vehicle (ID=%d, plate=%s) for customer %d", vID, plate, customer.ID)
+		}
+	}
+
 	return customer, nil
 }
 

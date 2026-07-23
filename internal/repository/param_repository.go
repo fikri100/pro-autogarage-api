@@ -38,3 +38,25 @@ func (r *ParamRepository) FindByGroup(ctx context.Context, groupParam string) ([
 	}
 	return params, nil
 }
+
+// FindIDByGroupAndCode retrieves the ID of a param by its group and code/name
+func (r *ParamRepository) FindIDByGroupAndCode(ctx context.Context, groupParam string, kodeParam string) (int, error) {
+	if kodeParam == "" {
+		return 0, nil
+	}
+	query := `
+		SELECT id 
+		FROM params 
+		WHERE group_param = $1 AND (kode_param = $2 OR nama_param = $2 OR id::text = $2) AND status = 'Y' 
+		LIMIT 1
+	`
+	var id int
+	err := r.db.QueryRowContext(ctx, query, groupParam, kodeParam).Scan(&id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
+}

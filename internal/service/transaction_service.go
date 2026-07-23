@@ -34,8 +34,8 @@ func (s *TransactionService) GetTransactionByWO(ctx context.Context, woID int) (
 
 // FinalizePayment processes the billing, calculates tax, and commits DB transaction
 func (s *TransactionService) FinalizePayment(ctx context.Context, transID int, req domain.PaymentRequest, adminUser string) error {
-	if req.PaymentMethod != "Tunai" && req.PaymentMethod != "Transfer Bank" && req.PaymentMethod != "QRIS" {
-		return errors.New("invalid payment method. Choose 'Tunai', 'Transfer Bank', or 'QRIS'")
+	if req.PaymentMethodID == 0 && req.PaymentMethod == "" {
+		return errors.New("Metode pembayaran wajib dipilih")
 	}
 
 	if len(req.Details) == 0 {
@@ -76,5 +76,5 @@ func (s *TransactionService) FinalizePayment(ctx context.Context, transID int, r
 	tax := netAmount * 0.11
 	grandTotal := netAmount + tax
 
-	return s.transactionRepo.FinalizePaymentTx(ctx, transID, req.PaymentMethod, discount, tax, grandTotal, details, adminUser)
+	return s.transactionRepo.FinalizePaymentTx(ctx, transID, req.PaymentMethodID, req.PaymentMethod, discount, tax, grandTotal, details, adminUser)
 }

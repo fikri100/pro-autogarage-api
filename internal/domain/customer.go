@@ -29,6 +29,15 @@ type CustomerRequest struct {
 	Username      *string `json:"username"`
 	IsSelfService bool    `json:"isSelfService"`
 	Password      *string `json:"password"`
+
+	// Initial Vehicle details (Optional)
+	LicensePlate string `json:"licensePlate"`
+	Plate        string `json:"plate"` // alias
+	Brand        string `json:"brand"`
+	Model        string `json:"model"`
+	YearMade     int    `json:"yearMade"`
+	Year         int    `json:"year"` // alias
+	Transmission string `json:"transmission"`
 }
 
 // Vehicle represents a customer's vehicle

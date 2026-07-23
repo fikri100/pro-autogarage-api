@@ -233,7 +233,7 @@ func (s *PortalService) CreateBooking(ctx context.Context, customerID int, req d
 
 	// Check if date and time slot is already taken by another active booking
 	var count int
-	checkQuery := `SELECT COUNT(1) FROM bookings WHERE booking_date = $1 AND booking_time = $2 AND status = 'Y' AND operational_status != 'CANCELLED'`
+	checkQuery := `SELECT COUNT(1) FROM bookings b LEFT JOIN params p ON b.operational_status_id = p.id WHERE b.booking_date = $1 AND b.booking_time = $2 AND b.status = 'Y' AND COALESCE(p.kode_param, '') != 'CANCELLED'`
 	err = tx.QueryRowContext(ctx, checkQuery, req.BookingDate, req.BookingTime).Scan(&count)
 	if err != nil {
 		return nil, err
@@ -243,13 +243,16 @@ func (s *PortalService) CreateBooking(ctx context.Context, customerID int, req d
 	}
 
 	// 2. Insert booking record in PENDING state
+	var pendingStatusID int
+	_ = tx.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'BOOKING_STATUS' AND kode_param = 'PENDING' LIMIT 1").Scan(&pendingStatusID)
+
 	insertBookingQuery := `
-		INSERT INTO bookings (customer_id, vehicle_id, booking_date, booking_time, complaints, operational_status, created_by, updated_by)
-		VALUES ($1, $2, $3, $4, $5, 'PENDING', 'SELF_SERVICE', 'SELF_SERVICE')
+		INSERT INTO bookings (customer_id, vehicle_id, booking_date, booking_time, complaints, operational_status_id, created_by, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, 'SELF_SERVICE', 'SELF_SERVICE')
 		RETURNING id
 	`
 	var bookingID int
-	err = tx.QueryRowContext(ctx, insertBookingQuery, customerID, vehicleID, req.BookingDate, req.BookingTime, req.Complaints).Scan(&bookingID)
+	err = tx.QueryRowContext(ctx, insertBookingQuery, customerID, vehicleID, req.BookingDate, req.BookingTime, req.Complaints, pendingStatusID).Scan(&bookingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save booking: %w", err)
 	}
@@ -268,7 +271,7 @@ func (s *PortalService) GetBookings(ctx context.Context, customerID int) ([]*dom
 	query := `
 		SELECT 
 			b.id, b.customer_id, c.name, c.phone, b.vehicle_id, v.license_plate, v.brand, v.model,
-			b.booking_date, b.booking_time, b.complaints, b.operational_status, b.status,
+			b.booking_date, b.booking_time, b.complaints, COALESCE(b.operational_status_id, 0), COALESCE(p.kode_param, ''), b.status,
 			b.created_by, b.created_at, b.updated_by, b.updated_at,
 			v.customer_id AS vehicle_customer_id, vc.name AS vehicle_owner_name,
 			wo.estimated_completion
@@ -276,6 +279,7 @@ func (s *PortalService) GetBookings(ctx context.Context, customerID int) ([]*dom
 		JOIN customers c ON b.customer_id = c.id
 		JOIN vehicles v ON b.vehicle_id = v.id
 		JOIN customers vc ON v.customer_id = vc.id
+		LEFT JOIN params p ON b.operational_status_id = p.id
 		LEFT JOIN work_orders wo ON wo.booking_id = b.id AND wo.status = 'Y'
 		WHERE b.customer_id = $1 AND b.status = 'Y'
 		ORDER BY b.booking_date DESC, b.booking_time DESC
@@ -295,7 +299,7 @@ func (s *PortalService) GetBookings(ctx context.Context, customerID int) ([]*dom
 
 		if err := rows.Scan(
 			&b.ID, &b.CustomerID, &b.CustomerName, &b.CustomerPhone, &b.VehicleID, &b.LicensePlate, &b.VehicleBrand, &b.VehicleModel,
-			&bDate, &bTime, &b.Complaints, &b.OperationalStatus, &b.Status,
+			&bDate, &bTime, &b.Complaints, &b.OperationalStatusID, &b.OperationalStatus, &b.Status,
 			&b.CreatedBy, &b.CreatedAt, &b.UpdatedBy, &b.UpdatedAt,
 			&b.VehicleCustomerID, &b.VehicleOwnerName,
 			&estimatedCompletion,
@@ -369,7 +373,7 @@ func (s *PortalService) GetDashboardSummary(ctx context.Context, customerID int)
 	}
 
 	// 2. Active bookings (PENDING, CONFIRMED)
-	queryActive := `SELECT COUNT(1) FROM bookings WHERE customer_id = $1 AND operational_status IN ('PENDING', 'CONFIRMED') AND status = 'Y'`
+	queryActive := `SELECT COUNT(1) FROM bookings b LEFT JOIN params p ON b.operational_status_id = p.id WHERE b.customer_id = $1 AND COALESCE(p.kode_param, '') IN ('PENDING', 'CONFIRMED') AND b.status = 'Y'`
 	err = s.db.QueryRowContext(ctx, queryActive, customerID).Scan(&summary.ActiveBookings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count active bookings: %w", err)
@@ -623,7 +627,7 @@ func (s *PortalService) UpdateProfile(ctx context.Context, customerID int, req d
 func (s *PortalService) CancelBooking(ctx context.Context, customerID int, bookingID int) error {
 	var currentStatus string
 	var dbCustomerID int
-	err := s.db.QueryRowContext(ctx, "SELECT customer_id, operational_status FROM bookings WHERE id = $1 AND status = 'Y'", bookingID).Scan(&dbCustomerID, &currentStatus)
+	err := s.db.QueryRowContext(ctx, "SELECT b.customer_id, COALESCE(p.kode_param, '') FROM bookings b LEFT JOIN params p ON b.operational_status_id = p.id WHERE b.id = $1 AND b.status = 'Y'", bookingID).Scan(&dbCustomerID, &currentStatus)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errors.New("booking tidak ditemukan")
@@ -637,7 +641,10 @@ func (s *PortalService) CancelBooking(ctx context.Context, customerID int, booki
 		return errors.New("hanya booking dengan status 'Menunggu Persetujuan' yang dapat dibatalkan")
 	}
 
-	_, err = s.db.ExecContext(ctx, "UPDATE bookings SET operational_status = 'CANCELLED', updated_by = 'SELF_SERVICE', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'Y'", bookingID)
+	var cancelledStatusID int
+	_ = s.db.QueryRowContext(ctx, "SELECT id FROM params WHERE group_param = 'BOOKING_STATUS' AND kode_param = 'CANCELLED' LIMIT 1").Scan(&cancelledStatusID)
+
+	_, err = s.db.ExecContext(ctx, "UPDATE bookings SET operational_status_id = $1, updated_by = 'SELF_SERVICE', updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND status = 'Y'", cancelledStatusID, bookingID)
 	return err
 }
 
